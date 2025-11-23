@@ -21,6 +21,7 @@ See a live instance at [http://3lips.30hours.dev](http://3lips.30hours.dev).
 
 ```bash
 sudo git clone http://github.com/30hours/3lips /opt/3lips
+cd /opt/3lips
 sudo docker compose up -d —build
 ```
 
