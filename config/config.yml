@@ -32,6 +32,7 @@ map:
     mapbox_dark: tile.datr.dev/data/mapbox-dark-v10/
     opentopomap: tile.datr.dev/data/opentopomap/
   tar1090: adsb.30hours.dev
+  tar1090_https: true
 
 3lips:
   save: true

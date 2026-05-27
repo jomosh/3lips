@@ -37,6 +37,7 @@ try:
   tDeleteAdsb = config['associate']['adsb']['tDelete']
   save = config['3lips']['save']
   tDelete = config['3lips']['tDelete']
+  tar1090Https = config['map']['tar1090_https']
 except FileNotFoundError:
   print("Error: Configuration file not found.")
 except yaml.YAMLError as e:
@@ -114,7 +115,7 @@ async def event():
     adsb_urls.append(item["adsb"])
   adsb_urls = list(set(adsb_urls))
   for url in adsb_urls:
-    truth_adsb[url] = adsbTruth.process(url)
+    truth_adsb[url] = adsbTruth.process(url, tar1090Https)
 
   # main processing
   for item in api_event:

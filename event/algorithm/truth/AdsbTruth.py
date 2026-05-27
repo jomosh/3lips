@@ -21,18 +21,20 @@ class AdsbTruth:
 
         self.seen_pos_limit = seen_pos_limit
 
-    def process(self, server):
+    def process(self, server, use_https):
 
         """
         @brief Store ADS-B truth for each target in LLA.
         @param server (str): The tar1090 server to get truth from.
+        @param use_https (bool): Use HTTPS if True, HTTP if False.
         @return dict: Associated detections by [hex].
         """
 
         output = {}
 
         # get tar1090 URL
-        url = 'https://' + server + '/data/aircraft.json'
+        scheme = 'https' if use_https else 'http'
+        url = scheme + '://' + server + '/data/aircraft.json'
 
         # get ADSB detections
         try:
