@@ -197,6 +197,8 @@ function is_localhost(ip) {
   }
 
   ip = ip.replace(/^https?:\/\//, "");
+  ip = ip.split('/')[0];
+  ip = ip.split(':')[0];
   
   const localRanges = ['127.0.0.1', '192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12'];
 

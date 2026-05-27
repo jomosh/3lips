@@ -42,6 +42,8 @@ except FileNotFoundError:
   print("Error: Configuration file not found.")
 except yaml.YAMLError as e:
   print("Error reading YAML configuration:", e)
+except KeyError as e:
+  print(f"Error: Missing configuration key: {e}")
 
 # init event loop
 api = []
