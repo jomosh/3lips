@@ -224,7 +224,7 @@ function is_localhost(ip) {
   return localRanges.some(range => {
     const [rangeStart, rangeSize = 32] = range.split('/');
     const start = ipToInt(rangeStart);
-    const end = (start | (1 << (32 - +rangeSize))) >>> 0;
+    const end = (start | ((1 << (32 - +rangeSize)) - 1)) >>> 0;
     return ipToInt(ip) >= start && ipToInt(ip) <= end;
   });
 
