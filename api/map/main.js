@@ -191,13 +191,32 @@ if (cesiumCredit) {
 }
 
 function is_localhost(ip) {
-  
+
+  // strip scheme
+  ip = ip.replace(/^https?:\/\//, "");
+
+  // strip path
+  ip = ip.split('/')[0];
+
+  // handle IPv6 bracketed notation: [::1]:8080 -> ::1
+  if (ip.startsWith('[')) {
+    ip = ip.split(']')[0].slice(1);
+  } else if ((ip.match(/:/g) || []).length === 1) {
+    // IPv4 or hostname with a single colon: strip port
+    ip = ip.split(':')[0];
+  }
+  // bare IPv6 (multiple colons, no brackets): leave as-is
+
+  // check for localhost hostname (after normalization to catch localhost:port)
   if (ip === 'localhost') {
     return true;
   }
 
-  ip = ip.replace(/^https?:\/\//, "");
-  
+  // check for IPv6 loopback
+  if (ip === '::1') {
+    return true;
+  }
+
   const localRanges = ['127.0.0.1', '192.168.0.0/16', '10.0.0.0/8', '172.16.0.0/12'];
 
   const ipToInt = ip => ip.split('.').reduce((acc, octet) => (acc << 8) + +octet, 0) >>> 0;
@@ -205,7 +224,7 @@ function is_localhost(ip) {
   return localRanges.some(range => {
     const [rangeStart, rangeSize = 32] = range.split('/');
     const start = ipToInt(rangeStart);
-    const end = (start | (1 << (32 - +rangeSize))) >>> 0;
+    const end = (start | ((1 << (32 - +rangeSize)) - 1)) >>> 0;
     return ipToInt(ip) >= start && ipToInt(ip) <= end;
   });
 
