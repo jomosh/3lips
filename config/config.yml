@@ -9,6 +9,8 @@ radar:
 associate:
   adsb:
     tDelete: 5
+    adsb2dd: adsb2dd.30hours.dev
+    adsb2dd_https: true
 
 localisation:
   ellipse:

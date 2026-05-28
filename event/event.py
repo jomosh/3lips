@@ -36,6 +36,8 @@ try:
   thresholdEllipsoid = config['localisation']['ellipsoid']['threshold']
   nDisplayEllipsoid = config['localisation']['ellipsoid']['nDisplay']
   tDeleteAdsb = config['associate']['adsb']['tDelete']
+  adsb2ddServer = config['associate']['adsb']['adsb2dd']
+  adsb2ddHttps = config['associate']['adsb']['adsb2dd_https']
   save = config['3lips']['save']
   tDelete = config['3lips']['tDelete']
   tar1090Https = config['map']['tar1090_https']
@@ -51,7 +53,7 @@ api = []
 
 # init config
 tDelete = tDelete
-adsbAssociator = AdsbAssociator()
+adsbAssociator = AdsbAssociator(adsb2ddServer, adsb2ddHttps)
 ellipseParametricMean = EllipseParametric("mean", nSamplesEllipse, thresholdEllipse)
 ellipseParametricMin = EllipseParametric("min", nSamplesEllipse, thresholdEllipse)
 ellipsoidParametricMean = EllipsoidParametric("mean", nSamplesEllipsoid, thresholdEllipsoid)
