@@ -4,9 +4,8 @@
 @author 30hours
 """
 
-from flask import Flask, Response, render_template, request, redirect, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory
 import os
-import requests
 import time
 import asyncio
 import yaml
@@ -107,23 +106,6 @@ def serve_map(file):
   base_dir = os.path.abspath(os.path.dirname(__file__))
   public_folder = os.path.join(base_dir, 'map')
   return send_from_directory(public_folder, file)
-
-# handle /cesium/ specifically
-@app.route('/cesium/')
-def serve_cesium_index():
-  return redirect('/cesium/index.html')
-
-@app.route('/cesium/<path:file>')
-def serve_cesium_content(file):
-  apache_url = 'http://cesium-apache/' + file
-  try:
-    response = requests.get(apache_url)
-    if response.status_code == 200:
-      return Response(response.content, content_type=response.headers['content-type'])
-    response.raise_for_status()
-  except requests.exceptions.RequestException as e:
-    print(f"Error fetching content from Apache server: {e}")
-  return Response('Error fetching content from Apache server', status=500, content_type='text/plain')
 
 # output config file
 @app.route('/config')

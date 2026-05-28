@@ -9,7 +9,7 @@ See a live instance at [http://3lips.30hours.dev](http://3lips.30hours.dev).
 ## Features
 
 - Provides a JSON API for geolocation of targets given [blah2](http://github.com/30hours/blah2) radar nodes.
-- Uses a [CesiumJS](http://github.com/CesiumGS/cesium) web front-end to visualise data.
+- Uses a [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js) web front-end to visualise data.
 - Ability to compare a number of algorithms for target localisation.
 
 ## Usage
