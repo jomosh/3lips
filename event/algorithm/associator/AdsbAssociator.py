@@ -19,11 +19,14 @@ class AdsbAssociator:
   @todo Add adjustable window for associating truth/detections.
   """
 
-  def __init__(self):
+  def __init__(self, adsb2dd_server, adsb2dd_https):
 
     """
     @brief Constructor for the AdsbAssociator class.
     """
+
+    self.adsb2dd_server = adsb2dd_server
+    self.adsb2dd_https = adsb2dd_https
 
   def process(self, radar_list, radar_data, timestamp):
 
@@ -143,7 +146,7 @@ class AdsbAssociator:
 
     adsb = radar_data['config']['truth']['adsb']['tar1090']
 
-    api_url = "http://adsb2dd.30hours.dev/api/dd"
+    api_url = ('https' if self.adsb2dd_https else 'http') + '://' + self.adsb2dd_server + '/api/dd'
 
     api_query = (
       api_url +
