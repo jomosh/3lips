@@ -14,6 +14,7 @@ import json
 import hashlib
 import os
 import yaml
+from urllib.parse import unquote
 
 from algorithm.associator.AdsbAssociator import AdsbAssociator
 from algorithm.localisation.EllipseParametric import EllipseParametric
@@ -277,7 +278,7 @@ async def callback_message_received(msg):
     api[-1]["hash"] = short_hash(msg)
     url_parts = msg.split("&")
     for part in url_parts:
-      key, value = part.split("=")
+      key, value = unquote(part).split("=", 1)
       if key in api[-1]:
         if not isinstance(api[-1][key], list):
           api[-1][key] = [api[-1][key]]
