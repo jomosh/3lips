@@ -1,16 +1,16 @@
 radar:
   - name: radar4
-    url: radar4.30hours.dev
+    url: "radar4.30hours.dev"
   - name: radar5
-    url: radar5.30hours.dev
+    url: "radar5.30hours.dev"
   - name: radar6
-    url: radar6.30hours.dev
+    url: "radar6.30hours.dev"
 
 associate:
   adsb:
     tDelete: 5
-    adsb2dd: adsb2dd.30hours.dev
-    adsb2dd_https: true
+    adsb2dd: "adsb2dd.30hours.dev:49155"
+    adsb2dd_https: false
 
 localisation:
   ellipse:
@@ -33,8 +33,8 @@ map:
     mapbox_streets: tile.datr.dev/data/mapbox-streets-v11/
     mapbox_dark: tile.datr.dev/data/mapbox-dark-v10/
     opentopomap: tile.datr.dev/data/opentopomap/
-  tar1090: adsb.30hours.dev
-  tar1090_https: true
+  tar1090: "adsb.30hours.dev"
+  tar1090_https: false
 
 3lips:
   save: true
