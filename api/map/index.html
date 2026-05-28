@@ -8,26 +8,63 @@
     <!-- Make the application on mobile take up the full browser screen and disable user scaling. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no"/>
     <title>3lips Map</title>
-    <script src="/cesium/Build/Cesium/Cesium.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" />
+    <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
     <style>
-      @import url(/cesium/Build/Cesium/Widgets/widgets.css);
       html,
       body,
-      #cesiumContainer {
+      #mapContainer {
         width: 100%;
         height: 100%;
         margin: 0;
         padding: 0;
         overflow: hidden;
       }
+      #layer-switcher {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 1;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 4px;
+        padding: 6px 8px;
+        font-family: sans-serif;
+        font-size: 13px;
+      }
+      #layer-switcher strong {
+        display: block;
+        margin-bottom: 4px;
+      }
+      #layer-switcher button {
+        display: block;
+        width: 100%;
+        margin-bottom: 4px;
+        padding: 4px 8px;
+        cursor: pointer;
+        border: 1px solid #aaa;
+        border-radius: 3px;
+        background: #f0f0f0;
+      }
+      #layer-switcher button.active {
+        background: #4a90d9;
+        color: white;
+        border-color: #3a80c9;
+      }
     </style>
   </head>
   <body>
-    <div id="cesiumContainer"></div>
-	  <script src="lib/jquery-3.6.0.min.js"></script>
+    <div id="mapContainer"></div>
+    <div id="layer-switcher">
+      <strong>Tiles</strong>
+      <button id="btn-osm" class="active" onclick="switchTileLayer('osm')">OSM</button>
+      <button id="btn-carto_light" onclick="switchTileLayer('carto_light')">Carto Light</button>
+      <button id="btn-carto_dark" onclick="switchTileLayer('carto_dark')">Carto Dark</button>
+      <button id="btn-opentopomap" onclick="switchTileLayer('opentopomap')">OpenTopoMap</button>
+    </div>
+    <script src="lib/jquery-3.6.0.min.js"></script>
     <script src="event/adsb.js"></script>
     <script src="event/radar.js"></script>
     <script src="event/ellipsoid.js"></script>
-	  <script src="main.js"></script>
+    <script src="main.js"></script>
   </body>
 </html>

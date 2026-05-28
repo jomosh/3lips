@@ -24,15 +24,15 @@ localisation:
 
 map:
   location:
-    latitude: -34.9286
-    longitude: 138.5999
+    latitude: 51.5074
+    longitude: -0.1278
   center_width: 50000
   center_height: 40000
   tile_server:
-    esri: tile.datr.dev/data/esri-adelaide/
-    mapbox_streets: tile.datr.dev/data/mapbox-streets-v11/
-    mapbox_dark: tile.datr.dev/data/mapbox-dark-v10/
-    opentopomap: tile.datr.dev/data/opentopomap/
+    osm: tile.openstreetmap.org/
+    carto_light: basemaps.cartocdn.com/light_all/
+    carto_dark: basemaps.cartocdn.com/dark_all/
+    opentopomap: tile.opentopomap.org/
   tar1090: "adsb.30hours.dev"
   tar1090_https: false
 
