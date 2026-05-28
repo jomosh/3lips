@@ -26,8 +26,8 @@ var centerLongitude = config['map']['location']['longitude'];
 // bounding box for initial map view
 var metersPerDegreeLongitude = 111320 * Math.cos(centerLatitude * Math.PI / 180);
 var metersPerDegreeLatitude = 111132.954 - 559.822 * Math.cos(
-  2 * centerLongitude * Math.PI / 180) + 1.175 *
-  Math.cos(4 * centerLongitude * Math.PI / 180);
+  2 * centerLatitude * Math.PI / 180) + 1.175 *
+  Math.cos(4 * centerLatitude * Math.PI / 180);
 var widthDegrees  = config['map']['center_width']  / metersPerDegreeLongitude;
 var heightDegrees = config['map']['center_height'] / metersPerDegreeLatitude;
 var west  = centerLongitude - widthDegrees  / 2;
@@ -51,6 +51,9 @@ var tileAttributions = {
 };
 
 var currentTileLayer = 'osm';
+
+// set to true once map.on('load') completes and all layers exist
+var mapLoaded = false;
 
 // global feature store – each entry is a GeoJSON Feature representing a plotted point
 var pointFeatures = [];
@@ -78,6 +81,8 @@ var map = new maplibregl.Map({
 });
 
 map.on('load', function () {
+
+  mapLoaded = true;
 
   // fit the initial view to the configured area bounds
   map.fitBounds([[west, south], [east, north]], { animate: false });
@@ -228,7 +233,7 @@ map.on('load', function () {
  * @returns {object} The GeoJSON Feature representing the added point.
  */
 function addPoint(latitude, longitude, altitude, pointName, pointColor, pointSize, type, timestamp) {
-  const id = type + '_' + timestamp + '_' + Math.random().toString(36).substr(2, 9);
+  const id = type + '_' + timestamp + '_' + Math.random().toString(36).substring(2, 11);
   const feature = {
     type: 'Feature',
     id: id,
@@ -249,14 +254,23 @@ function addPoint(latitude, longitude, altitude, pointName, pointColor, pointSiz
   return feature;
 }
 
+// timer handle used to debounce updateMapSource() calls
+var _updateSourceTimer = null;
+
 /**
- * @brief Pushes the current pointFeatures array to the MapLibre GeoJSON source.
+ * @brief Schedules a GeoJSON source update for the next event-loop tick.
+ * Multiple addPoint() calls within the same synchronous block are batched
+ * into a single setData() call, avoiding redundant GPU uploads per tick.
  */
 function updateMapSource() {
-  var source = map.getSource('points');
-  if (source) {
-    source.setData({ type: 'FeatureCollection', features: pointFeatures });
-  }
+  if (_updateSourceTimer !== null) return;
+  _updateSourceTimer = setTimeout(function() {
+    _updateSourceTimer = null;
+    var source = map.getSource('points');
+    if (source) {
+      source.setData({ type: 'FeatureCollection', features: pointFeatures });
+    }
+  }, 0);
 }
 
 function is_localhost(ip) {
@@ -345,7 +359,7 @@ function doesEntityNameExist(name) {
  *   (e.g. "osm", "carto_dark").
  */
 function switchTileLayer(layerName) {
-  if (!tileUrls[layerName]) return;
+  if (!tileUrls[layerName] || !mapLoaded) return;
   for (var name in tileUrls) {
     map.setLayoutProperty(
       'layer-' + name,

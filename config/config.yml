@@ -28,6 +28,9 @@ map:
     longitude: -0.1278
   center_width: 50000
   center_height: 40000
+  # Default tile servers point at public OSM/CARTO/OpenTopoMap endpoints.
+  # These services have usage policies and rate limits; for production use
+  # replace these values with your own tile proxy or self-hosted tile server.
   tile_server:
     osm: tile.openstreetmap.org/
     carto_light: basemaps.cartocdn.com/light_all/
