@@ -2,13 +2,12 @@
 
 Target localisation for multi-static radar using ellipse intersections. Not a dating app.
 
-See a live instance at [http://3lips.30hours.dev](http://3lips.30hours.dev).
 
 ![3lips example display](./example.png "3lips")
 
 ## Features
 
-- Provides a JSON API for geolocation of targets given [blah2](http://github.com/30hours/blah2) radar nodes.
+- Provides a JSON API for geolocation of targets given [blah2](http://github.com/jomosh/blah2) radar nodes.
 - Uses a [MapLibre GL JS](https://github.com/maplibre/maplibre-gl-js) web front-end to visualise data.
 - Ability to compare a number of algorithms for target localisation.
 
@@ -20,7 +19,7 @@ See a live instance at [http://3lips.30hours.dev](http://3lips.30hours.dev).
 - Run the docker compose command.
 
 ```bash
-sudo git clone http://github.com/30hours/3lips /opt/3lips
+sudo git clone http://github.com/jomosh/3lips /opt/3lips
 sudo docker compose up -d —build
 ```
 
