@@ -425,7 +425,7 @@ All algorithms need at least **3 independent bistatic pairs with distinct baseli
 | **3** | **Unique 3D fix** (non-degenerate geometry). Ghost probability ~1 in 10,000 per epoch with well-separated baselines |
 | 4+ | Overdetermined — improved accuracy and ghost immunity |
 
-> **`SphericalIntersection` with 2 pairs**: The algorithm will raise an unhandled exception (singular matrix crash) if fewer than 3 pairs are supplied. This is a known bug — TODO item **D1**.
+> **`SphericalIntersection` with < 3 pairs**: Detections with fewer than 3 associated pairs are now silently skipped (a `matrix_rank(S) < 3` guard returns no output for that target). Accuracy may still degrade for near-collinear node geometries — see TODO item **D1** for the remaining conditioning work.
 
 ---
 
@@ -456,7 +456,7 @@ The `/api/config` response must include:
 }
 ```
 
-If a radar node is unreachable (timeout or error), 3lips continues with the remaining available nodes. Localisation requires at least **3 nodes responding** for all methods. `SphericalIntersection` is documented elsewhere as needing only 2, but the current implementation will crash (singular matrix) with fewer than 3 — see TODO item D1.
+If a radar node is unreachable (timeout or error), 3lips continues with the remaining available nodes. Localisation requires at least **3 nodes responding** for all methods. `SphericalIntersection` silently skips targets with fewer than 3 associated detections; accuracy may degrade for near-collinear geometries — see TODO item D1 for the remaining conditioning work.
 
 ---
 

@@ -181,11 +181,11 @@ These are confirmed defects that silently produce wrong results today.
 ### D1 — Condition number guard in `SphericalIntersection`
 - **File**: `SphericalIntersection.py` line ~87
 - **Problem**: `S_star = np.linalg.inv(S.T @ S) @ S.T`. Two distinct failure modes:
-  1. **Fewer than 3 detections**: if `assoc_detections[target]` has only 1 or 2 entries, S is (1×3) or (2×3). `S.T @ S` is 3×3 but rank-deficient, and `np.linalg.inv` raises `numpy.linalg.LinAlgError: Singular matrix` — an **unhandled exception that propagates up and crashes the event loop processing for that epoch**.
+  1. **Fewer than 3 detections / degenerate geometry**: ~~if `assoc_detections[target]` has only 1 or 2 entries, S is (1×3) or (2×3). `S.T @ S` is 3×3 but rank-deficient, and `np.linalg.inv` raises `numpy.linalg.LinAlgError: Singular matrix` — an **unhandled exception that propagates up and crashes the event loop processing for that epoch**~~ **Fixed**: a `matrix_rank(S) < 3: continue` guard now skips any target whose detection matrix is rank-deficient (covers < 3 detections and co-planar/co-linear nodes).
   2. **Nearly co-linear receivers**: if 3+ receivers exist but lie along nearly the same line of sight from the target, S is full-rank but ill-conditioned. `inv` completes but the result is numerically garbage (position estimate far from truth). No warning is given.
 - **Fix**: Replace `np.linalg.inv(S.T @ S) @ S.T` with `np.linalg.lstsq(S, ...)` directly, which handles both cases gracefully using the Moore-Penrose pseudoinverse (LAPACK DGELSD). Also add a minimum detection count guard at the top of the target loop.
 - [ ] Replace `np.linalg.inv(S.T @ S) @ S.T` with `np.linalg.lstsq(S, ..., rcond=None)` for all three solve operations
-- [ ] Add `if len(assoc_detections[target]) < 3: continue` guard — SX requires a 3×3 full-rank S matrix; 1 or 2 detections make S rank-deficient and crash the event loop. The USER_GUIDE.md previously stated SX needs "≥2 radars" — this is **incorrect**, the true minimum is **≥3** (now corrected in USER_GUIDE.md).
+- [x] Add rank guard — implemented as `if np.linalg.matrix_rank(S) < 3: continue`, which is more general than a length check alone (also catches co-planar nodes with ≥3 detections).
 - [ ] Add `np.linalg.cond(S)` check: log a warning when condition number > 100 (poorly conditioned geometry)
 - [ ] Add unit test: 1-detection input → no crash, empty output for that target
 - [ ] Add unit test: 2-detection input → no crash, empty output (not 3, so guard triggers)
