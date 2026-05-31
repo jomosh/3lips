@@ -67,7 +67,7 @@ if __name__ == '__main__':
 1. **Valid 3-radar scenario** — assert position within tolerance
 2. **Empty input** — assert returns `{}`
 3. **Western hemisphere** — target with negative longitude, assert `result_lon < 0`
-4. **Minimum radar count** — exactly the minimum required radars (e.g. 2 for parametric, 2 for SX)
+4. **Minimum radar count** — exactly 3 radars for all methods (the event loop filters to `associated_dets_3_radars` before calling `process()`, so 2-radar inputs never reach any localisation algorithm in production)
 
 ## Tolerance Guidelines
 | Algorithm | Lat/lon tolerance | Alt tolerance |

@@ -6,7 +6,8 @@ applyTo: "test/**/*.py"
 
 ## Test Location and Structure
 - All tests live under `test/event/` mirroring the `event/` source structure.
-- Run from the `event/` directory: `python -m pytest ../test/`
+- Run from the `event/` directory: `python -m unittest discover -s ../test/ -v`
+- Do not use `pytest` — it is not listed in `event/requirements.txt` and will fail on a fresh checkout.
 - Test file naming: `Test<ClassName>.py` (e.g. `TestEllipseParametric.py`).
 
 ## Minimum Coverage Requirements

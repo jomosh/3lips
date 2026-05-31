@@ -40,7 +40,7 @@ Each **blah2** radar node outputs a list of detections as `(delay, Doppler)` pai
 - [Docker Engine](https://docs.docker.com/engine/install/) ≥ 20.10
 - [Docker Compose](https://docs.docker.com/compose/install/) ≥ 2.0 (`docker compose` with a space, not `docker-compose`)
 - Network access to your blah2 radar nodes and ADS-B truth server
-- At least **2 blah2 radar nodes** for 2D localisation; **3 or more** for reliable 3D
+- At least **3 blah2 radar nodes** (the event loop requires ≥ 3 associated detections before any localisation algorithm runs)
 
 ### External Services Required
 | Service | Purpose | URL format |
@@ -513,11 +513,19 @@ If a radar node is unreachable (timeout or error), 3lips continues with the rema
 
 ### Running without Docker
 
+Both services open `config/config.yml` relative to their working directory, and both import from `common/`.  The Docker setup provides these via volume mounts; for a bare-host run you need to make them available first:
+
+```bash
+# One-time setup — create symlinks so each service can find shared directories
+ln -s "$(pwd)/config" api/config && ln -s "$(pwd)/common" api/common
+ln -s "$(pwd)/config" event/config && ln -s "$(pwd)/common" event/common
+```
+
 ```bash
 # Terminal 1: API service
 cd api
 pip install -r requirements.txt
-flask run --port 5000
+FLASK_APP=api.py flask run --port 5000
 
 # Terminal 2: Event loop
 cd event
@@ -529,7 +537,7 @@ python event.py
 
 ```bash
 cd event
-python -m pytest ../test/ -v
+python -m unittest discover -s ../test/ -v
 ```
 
 ### Project structure

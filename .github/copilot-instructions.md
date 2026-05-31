@@ -37,7 +37,7 @@ event/event.py  ─── ZMQ (port 6969) ───  api/api.py (Flask)
 
 - A **bistatic radar** has a transmitter (TX) and a separate receiver (RX). The target lies on an **ellipsoid** with TX and RX as foci, and semi-major axis `a = (bistatic_range + TX-RX_distance) / 2`.
 - **Bistatic range** (delay × speed_of_light) is the sum of the TX→target and target→RX path lengths. This is what `radar["delay"]` encodes (in seconds; multiply by 1000 for milliseconds, then × c for metres).
-- **Localisation** requires ≥2 bistatic pairs (radars) to intersect their ellipsoids and find the target position.
+- **Localisation** requires ≥3 bistatic pairs (radars). The event loop filters detections to targets associated across 3 or more radars (`associated_dets_3_radars`) before calling any localisation algorithm; inputs with fewer than 3 associated radars are silently discarded.
 - The **SphericalIntersection (SX) method** is a closed-form solution valid *only* when all bistatic pairs share a common TX or a common RX. Do not apply SX to arbitrary multi-static geometries.
 - All position computations use **ECEF (Earth-Centred Earth-Fixed)** coordinates internally. Convert to/from **LLA (latitude/longitude/altitude)** only at input/output boundaries. Never accumulate errors by converting back and forth mid-computation.
 - **WGS-84** is the reference ellipsoid throughout. Use constants: `a = 6378137.0 m`, `f = 1/298.257223563`.
@@ -88,7 +88,7 @@ event/event.py  ─── ZMQ (port 6969) ───  api/api.py (Flask)
 ## Testing
 
 - Unit tests live in `test/`.
-- Run tests with: `python -m pytest test/` from the `event/` directory.
+- Run tests with: `python -m unittest discover -s test/ -v` from the `event/` directory (pytest is not in the project dependencies).
 - Each algorithm must have at least one unit test with a known closed-form answer.
 - Geometry tests (`TestGeometry.py`) must include both eastern and **western** hemisphere cases.
 - When fixing a bug, add a regression test that would have caught it.

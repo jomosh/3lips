@@ -41,5 +41,5 @@ Return `{}` (empty dict) if no detections — never `None`.
 
 ## SphericalIntersection Specific
 - Only valid when all bistatic pairs share a common TX or common RX.
-- Always check `np.linalg.matrix_rank(S) >= 2` before matrix inversion.
+- Always check `np.linalg.matrix_rank(S) >= 3` (full column rank) before calling `np.linalg.inv(S.T @ S)`. S is (nDetections × 3); fewer than 3 non-coplanar rows make S.T @ S singular. A rank-2 check is not sufficient — use `nDetections >= 3` as a fast pre-check, then confirm rank for degenerate geometries.
 - Fall back to `np.linalg.lstsq` for rank-deficient S.
