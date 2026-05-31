@@ -13,9 +13,9 @@ class AdsbAssociator:
   @brief A class for associating detections of the same target.
   @details First associate ADS-B truth with each radar detection.
   Then associate over multiple radars.
-  @see blah2 at https://github.com/30hours/blah2.
+  @see blah2 at https://github.com/jomosh/blah2.
   Uses truth data in delay-Doppler space from an adsb2dd server.
-  @see adsb2dd at https://github.com/30hours/adsb2dd.
+  @see adsb2dd at https://github.com/jomosh/adsb2dd.
   @todo Add adjustable window for associating truth/detections.
   """
 
@@ -130,7 +130,7 @@ class AdsbAssociator:
 
     """
     @brief Generate an adsb2dd API endpoint for each radar.
-    @see adsb2dd at https://github.com/30hours/adsb2dd.
+    @see adsb2dd at https://github.com/jomosh/adsb2dd.
     @param radar (str): Radar to run adsb2dd.
     @param radar_data (dict): Radar data for this radar.
     @return str: adsb2dd API for radar.

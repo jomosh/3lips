@@ -15,7 +15,7 @@ class EllipsoidParametric:
   @class EllipsoidParametric
   @brief A class for intersecting ellipsoids using a parametric approx.
   @details Uses associated detections from multiple radars.
-  @see blah2 at https://github.com/30hours/blah2.
+  @see blah2 at https://github.com/jomosh/blah2.
   """
 
   def __init__(self, method="mean", nSamples=100, threshold=500):
