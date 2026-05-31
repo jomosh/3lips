@@ -88,7 +88,7 @@ event/event.py  ─── ZMQ (port 6969) ───  api/api.py (Flask)
 ## Testing
 
 - Unit tests live in `test/`.
-- Run tests with: `python -m unittest discover -s test/ -v` from the `event/` directory (pytest is not in the project dependencies).
+- Run tests with: `python3 -m unittest discover -s ../test/event/ -p "Test*.py" -v` from the `event/` directory (pytest is not in the project dependencies; test files use `Test*.py` naming).
 - Each algorithm must have at least one unit test with a known closed-form answer.
 - Geometry tests (`TestGeometry.py`) must include both eastern and **western** hemisphere cases.
 - When fixing a bug, add a regression test that would have caught it.

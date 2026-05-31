@@ -88,6 +88,8 @@ class SphericalIntersection:
         r[index, :] = R_i
 
       # now compute matrix math
+      if np.linalg.matrix_rank(S) < 3:
+        continue
       S_star = np.linalg.inv(S.T @ S) @ S.T
       a = S_star @ z_vec
       b = S_star @ r

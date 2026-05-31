@@ -537,7 +537,7 @@ python event.py
 
 ```bash
 cd event
-python -m unittest discover -s ../test/ -v
+python3 -m unittest discover -s ../test/event/ -p "Test*.py" -v
 ```
 
 ### Project structure
