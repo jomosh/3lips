@@ -16,7 +16,7 @@ class EllipseParametric:
   @class EllipseParametric
   @brief A class for intersecting ellipses using a parametric approx.
   @details Uses associated detections from multiple radars.
-  @see blah2 at https://github.com/30hours/blah2.
+  @see blah2 at https://github.com/jomosh/blah2.
   """
 
   def __init__(self, method="mean", nSamples=150, threshold=500):
