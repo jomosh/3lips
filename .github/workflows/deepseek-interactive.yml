@@ -46,7 +46,7 @@ jobs:
 
       - name: Call DeepSeek API with user instructions
         id: review
-        shell: python3
+        shell: python3 {0}
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           COMMENT_BODY: ${{ github.event.comment.body }}
