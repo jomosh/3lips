@@ -22,16 +22,12 @@ jobs:
       - name: Get changed files diff
         id: diff
         run: |
-          # Fetch the base branch to compare against
           git fetch origin "${{ github.base_ref }}" --depth=1
-          # Get the diff as a patch file (limit to avoid blowing the API)
           git diff "origin/${{ github.base_ref }}...HEAD" -- . > /tmp/pr_diff.txt
           echo "diff_size=$(wc -c < /tmp/pr_diff.txt)" >> "$GITHUB_OUTPUT"
-          # If diff is too large, truncate to ~100KB for API limits
           MAX_SIZE=100000
           if [ "$(wc -c < /tmp/pr_diff.txt)" -gt "$MAX_SIZE" ]; then
             head -c "$MAX_SIZE" /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
-            echo "Diff was too large, truncated to ${MAX_SIZE} bytes." > /tmp/pr_diff_truncated_notice.txt
             mv /tmp/pr_diff_truncated.txt /tmp/pr_diff.txt
           fi
 
@@ -42,51 +38,51 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
           DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
+
+          # Build the system prompt
+          SYSTEM_MSG='You are a senior software engineer reviewing a pull request. Be thorough, constructive, and concise.'
+
+          # Build the user message with review instructions and the diff
+          USER_MSG=$(cat <<ENDMSG
+        Review the following pull request diff. Provide your analysis in this structure:
+
+        Summary:
+        - Brief overview of the changes
+
+        Code Quality and Best Practices:
+        - Issues found (if any)
+
+        Potential Bugs and Security Concerns:
+        - Issues found (if any)
+
+        Suggestions for Improvement:
+        - Suggestions (if any)
+
+        Overall Verdict:
+        - Approve or Request Changes
+
+        Here is the diff:
+
+        ${DIFF_CONTENT}
+        ENDMSG
+        )
+
           # Escape for JSON
-          DIFF_ESCAPED=$(printf '%s' "$DIFF_CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
-
-          PROMPT="You are an expert code reviewer. Review the following diff from a GitHub Pull Request.
-
-Provide your review in the following format:
-
-## Summary
-Brief overview of the changes.
-
-## Code Quality & Best Practices
-- Issues found (if any).
-
-## Potential Bugs & Security Concerns
-- Issues found (if any).
-
-## Suggestions for Improvement
-- Suggestions (if any).
-
-## Overall Verdict
-✅ Approve / ❌ Request Changes (choose one).
-
-Here is the diff:
-\`\`\`diff
-${DIFF_CONTENT}
-\`\`\`"
+          SYSTEM_ESCAPED=$(printf '%s' "$SYSTEM_MSG" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+          USER_ESCAPED=$(printf '%s' "$USER_MSG" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
 
           PAYLOAD=$(cat <<EOF
-{
-  "model": "deepseek-chat",
-  "messages": [
-    {
-      "role": "system",
-      "content": "You are a senior software engineer reviewing a pull request. Be thorough, constructive, and concise."
-    },
-    {
-      "role": "user",
-      "content": ${DIFF_ESCAPED}
-    }
-  ],
-  "max_tokens": 4096,
-  "temperature": 0.2
-}
-EOF
-)
+        {
+          "model": "deepseek-chat",
+          "messages": [
+            {"role": "system", "content": ${SYSTEM_ESCAPED}},
+            {"role": "user", "content": ${USER_ESCAPED}}
+          ],
+          "max_tokens": 4096,
+          "temperature": 0.2
+        }
+        EOF
+        )
 
           RESPONSE=$(curl -s -w "\n%{http_code}" \
             -H "Content-Type: application/json" \
@@ -105,7 +101,6 @@ EOF
 
           REVIEW_TEXT=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])")
           echo "$REVIEW_TEXT" > /tmp/review_output.txt
-          echo "review_done=true" >> "$GITHUB_OUTPUT"
 
       - name: Post review as PR comment
         uses: actions/github-script@v7
