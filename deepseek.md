@@ -1,6 +1,7 @@
 # 3lips — DeepSeek Portable Instructions
 
 > **Portable copy for use outside Cline (e.g., DeepSeek web chat, API, other IDEs).**
+> **Derived from:** `.clinerules` (single source of truth). Keep changes in sync with `.clinerules`.
 > **Consolidated from:** `.github/copilot-instructions.md`, 3 agent definitions, 5 instruction files, 5 prompt templates, and project source analysis.
 > **Purpose:** Domain knowledge, code rules, and workflow templates for AI-assisted development of the 3lips passive radar localisation system.
 > **TODO.md** is the single source of truth for development milestones — always reference it when planning work.
@@ -137,7 +138,7 @@ b = a * sqrt(1 - e²)   # semi-minor axis ≈ 6356752.314 m
 
 - **Python 3.x**, no typing annotations required but acceptable.
 - **NumPy** for all batch array operations; never use Python `for` loops with `math.sqrt` for operations over more than ~10 elements. Prefer vectorised operations.
-- **`scipy`** is available (or should be added) for optimisation (`scipy.optimize.least_squares`) and spatial indexing (`scipy.spatial.cKDTree`).
+- **`scipy`** needs to be added to `event/requirements.txt` before using it for optimisation (`scipy.optimize.least_squares`) or spatial indexing (`scipy.spatial.cKDTree`). This is an optional dependency — only add when implementing SciPy-dependent features (see TODO B1, C1, D2).
 - **`requests`** is used for synchronous HTTP; migrate to **`aiohttp`** for any new async fetch code.
 
 ### Class & Method Conventions
@@ -151,11 +152,16 @@ b = a * sqrt(1 - e²)   # semi-minor axis ≈ 6356752.314 m
 Every localisation algorithm class must implement:
 
 ```python
-__init__(self, method, nSamples, threshold)
-process(assoc_detections, radar_data) -> dict
+def __init__(self, method, nSamples, threshold):
+    # positional args: method ("mean"/"min"), nSamples (int), threshold (float)
+    # optionally accept **kwargs for forward compatibility
+    ...
+
+def process(self, assoc_detections, radar_data) -> dict:
+    ...
 ```
 
-- Constructor: `__init__(self, **kwargs)` accepting any config parameters
+- Constructor signature: `__init__(self, method, nSamples, threshold)` — called positionally from `event.py` as e.g. `EllipseParametric("mean", nSamplesEllipse, thresholdEllipse)`. May also accept `**kwargs` for forward compatibility.
 - Method: `process(self, assoc_detections, radar_data) -> dict`
 - Return schema: `{target_hex: {"points": [[lat, lon, alt], ...]}}`
 - Return `{}` if no detections — never `None`
@@ -221,7 +227,7 @@ elif item["localisation"] == "tdoa-least-squares":
 
 ### Geometry Class Rules
 
-- All methods are `@staticmethod` — no `self` parameter, no side effects.
+- Methods should be `@staticmethod` — no `self` parameter, no side effects. (Currently `Geometry.py` defines methods without `@staticmethod`; they work because they are called on the class, not instances. Adding `@staticmethod` is good practice for new methods.)
 - Input angles: degrees for LLA, radians for intermediate trig.
 - All outputs in SI units (metres, degrees).
 
