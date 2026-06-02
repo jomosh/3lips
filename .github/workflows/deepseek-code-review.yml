@@ -1,4 +1,4 @@
-name: DeepSeek Code Review
+name: DeepSeek Code Review v1.0
 
 on:
   pull_request:
