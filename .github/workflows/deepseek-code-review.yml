@@ -31,76 +31,76 @@ jobs:
             mv /tmp/pr_diff_truncated.txt /tmp/pr_diff.txt
           fi
 
-      - name: Call DeepSeek API to review code
+      - name: Build and send review request
         id: review
-        shell: bash
+        shell: python3
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
-          DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
+          import json, os, urllib.request
 
-          # Build the system prompt
-          SYSTEM_MSG='You are a senior software engineer reviewing a pull request. Be thorough, constructive, and concise.'
+          with open("/tmp/pr_diff.txt") as f:
+              diff_content = f.read()
 
-          # Build the user message with review instructions and the diff
-          USER_MSG=$(cat <<ENDMSG
-        Review the following pull request diff. Provide your analysis in this structure:
+          # Build messages
+          system_msg = "You are a senior software engineer reviewing a pull request. Be thorough, constructive, and concise."
 
-        Summary:
-        - Brief overview of the changes
+          user_msg = (
+              "Review the following pull request diff. Provide your analysis in this structure:\n"
+              "\n"
+              "Summary:\n"
+              "- Brief overview of the changes\n"
+              "\n"
+              "Code Quality and Best Practices:\n"
+              "- Issues found (if any)\n"
+              "\n"
+              "Potential Bugs and Security Concerns:\n"
+              "- Issues found (if any)\n"
+              "\n"
+              "Suggestions for Improvement:\n"
+              "- Suggestions (if any)\n"
+              "\n"
+              "Overall Verdict:\n"
+              "- Approve or Request Changes\n"
+              "\n"
+              "Here is the diff:\n"
+              f"{diff_content}"
+          )
 
-        Code Quality and Best Practices:
-        - Issues found (if any)
+          payload = json.dumps({
+              "model": "deepseek-chat",
+              "messages": [
+                  {"role": "system", "content": system_msg},
+                  {"role": "user", "content": user_msg}
+              ],
+              "max_tokens": 4096,
+              "temperature": 0.2
+          })
 
-        Potential Bugs and Security Concerns:
-        - Issues found (if any)
+          req = urllib.request.Request(
+              "https://api.deepseek.com/chat/completions",
+              data=payload.encode("utf-8"),
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": f"Bearer {os.environ['DEEPSEEK_API_KEY']}"
+              }
+          )
 
-        Suggestions for Improvement:
-        - Suggestions (if any)
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  response_json = json.loads(resp.read().decode("utf-8"))
+          except urllib.error.HTTPError as e:
+              print(f"API call failed with status {e.code}")
+              print(e.read().decode("utf-8"))
+              exit(1)
 
-        Overall Verdict:
-        - Approve or Request Changes
+          review_text = response_json["choices"][0]["message"]["content"]
+          with open("/tmp/review_output.txt", "w") as f:
+              f.write(review_text)
 
-        Here is the diff:
-
-        ${DIFF_CONTENT}
-        ENDMSG
-        )
-
-          # Escape for JSON
-          SYSTEM_ESCAPED=$(printf '%s' "$SYSTEM_MSG" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
-          USER_ESCAPED=$(printf '%s' "$USER_MSG" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
-
-          PAYLOAD=$(cat <<EOF
-        {
-          "model": "deepseek-chat",
-          "messages": [
-            {"role": "system", "content": ${SYSTEM_ESCAPED}},
-            {"role": "user", "content": ${USER_ESCAPED}}
-          ],
-          "max_tokens": 4096,
-          "temperature": 0.2
-        }
-        EOF
-        )
-
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${DEEPSEEK_API_KEY}" \
-            -d "$PAYLOAD" \
-            "https://api.deepseek.com/chat/completions")
-
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-
-          if [ "$HTTP_CODE" -ne 200 ]; then
-            echo "API call failed with status $HTTP_CODE"
-            echo "Response: $BODY"
-            exit 1
-          fi
-
-          REVIEW_TEXT=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])")
-          echo "$REVIEW_TEXT" > /tmp/review_output.txt
+          # Write output for GITHUB_OUTPUT
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write("review_done=true\n")
 
       - name: Post review as PR comment
         uses: actions/github-script@v7

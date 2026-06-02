@@ -22,19 +22,9 @@ jobs:
           fetch-depth: 0
           ref: refs/pull/${{ github.event.issue.number }}/merge
 
-      - name: Extract comment and PR info
-        id: info
-        run: |
-          echo "comment_body<<EOF" >> "$GITHUB_OUTPUT"
-          echo '${{ github.event.comment.body }}' >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-          echo "pr_number=${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
-          echo "comment_user=${{ github.event.comment.user.login }}" >> "$GITHUB_OUTPUT"
-
       - name: Get PR diff
         id: diff
         run: |
-          # Get the base ref of the PR
           PR_JSON=$(curl -s \
             -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
@@ -44,11 +34,9 @@ jobs:
 
           git fetch origin "$BASE_REF" --depth=1
 
-          # Get diff against base
           git diff "origin/${BASE_REF}...HEAD" -- . > /tmp/pr_diff.txt
           echo "diff_size=$(wc -c < /tmp/pr_diff.txt)" >> "$GITHUB_OUTPUT"
 
-          # Truncate if too large (100KB)
           MAX_SIZE=100000
           if [ "$(wc -c < /tmp/pr_diff.txt)" -gt "$MAX_SIZE" ]; then
             head -c "$MAX_SIZE" /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
@@ -58,57 +46,67 @@ jobs:
 
       - name: Call DeepSeek API with user instructions
         id: review
-        shell: bash
+        shell: python3
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+          COMMENT_USER: ${{ github.event.comment.user.login }}
         run: |
-          DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
-          COMMENT_BODY='${{ github.event.comment.body }}'
-          COMMENT_USER='${{ github.event.comment.user.login }}'
+          import json, os, urllib.request
+
+          with open("/tmp/pr_diff.txt") as f:
+              diff_content = f.read()
+
+          comment_body = os.environ["COMMENT_BODY"]
+          comment_user = os.environ["COMMENT_USER"]
 
           # Strip the /review command prefix to get user instructions
-          USER_INSTRUCTIONS=$(echo "$COMMENT_BODY" | sed 's|^/review||' | xargs)
+          user_instructions = comment_body.replace("/review", "", 1).strip()
 
-          if [ -z "$USER_INSTRUCTIONS" ]; then
-            USER_INSTRUCTIONS="Please review the overall PR."
-          fi
+          if not user_instructions:
+              user_instructions = "Please review the overall PR."
 
-          PAYLOAD=$(cat <<EOF
-          {
-            "model": "deepseek-chat",
-            "messages": [
-              {
-                "role": "system",
-                "content": "You are a senior software engineer reviewing a pull request. Be thorough, constructive, and concise."
-              },
-              {
-                "role": "user",
-                "content": "Here is the diff of a Pull Request:\n\n${DIFF_CONTENT}\n\nUser @${COMMENT_USER} gave the following instructions for this review:\n${USER_INSTRUCTIONS}\n\nProvide your review covering code quality, potential bugs, security concerns, and suggestions. Format your response with clear sections."
+          system_msg = "You are a senior software engineer reviewing a pull request. Be thorough, constructive, and concise."
+
+          user_msg = (
+              f"Here is the diff of a Pull Request:\n\n"
+              f"{diff_content}\n\n"
+              f"User @{comment_user} gave the following instructions for this review:\n"
+              f"{user_instructions}\n\n"
+              "Provide your review covering code quality, potential bugs, security concerns, and suggestions. "
+              "Format your response with clear sections."
+          )
+
+          payload = json.dumps({
+              "model": "deepseek-chat",
+              "messages": [
+                  {"role": "system", "content": system_msg},
+                  {"role": "user", "content": user_msg}
+              ],
+              "max_tokens": 4096,
+              "temperature": 0.2
+          })
+
+          req = urllib.request.Request(
+              "https://api.deepseek.com/chat/completions",
+              data=payload.encode("utf-8"),
+              headers={
+                  "Content-Type": "application/json",
+                  "Authorization": f"Bearer {os.environ['DEEPSEEK_API_KEY']}"
               }
-            ],
-            "max_tokens": 4096,
-            "temperature": 0.2
-          }
-EOF
-)
+          )
 
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${DEEPSEEK_API_KEY}" \
-            -d "$PAYLOAD" \
-            "https://api.deepseek.com/chat/completions")
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  response_json = json.loads(resp.read().decode("utf-8"))
+          except urllib.error.HTTPError as e:
+              print(f"API call failed with status {e.code}")
+              print(e.read().decode("utf-8"))
+              exit(1)
 
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
-
-          if [ "$HTTP_CODE" -ne 200 ]; then
-            echo "API call failed with status $HTTP_CODE"
-            echo "Response: $BODY"
-            exit 1
-          fi
-
-          REVIEW_TEXT=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])")
-          echo "$REVIEW_TEXT" > /tmp/review_output.txt
+          review_text = response_json["choices"][0]["message"]["content"]
+          with open("/tmp/review_output.txt", "w") as f:
+              f.write(review_text)
 
       - name: Post DeepSeek response as comment reply
         uses: actions/github-script@v7
@@ -131,7 +129,7 @@ EOF
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## 🤖 DeepSeek Response to @${commentUser}\n\n${reviewBody}\n\n---\n*Triggered by comment: \`${triggerComment}\`*`
+              body: `## 🤖 DeepSeek Response to @${commentUser}\n\n${reviewBody}\n\n---\n*Triggered by comment: *`,
             });
 
             console.log(`Reply posted as comment #${reply.id}`);
