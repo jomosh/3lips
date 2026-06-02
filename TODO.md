@@ -317,6 +317,121 @@ These are confirmed defects that silently produce wrong results today.
 ## Phase F — Blind (ADS-B-Free) Association 🟣
 
 > **Research context** (2025-06-01): Full algorithm survey conducted. The findings below are self-contained so this phase can be implemented from a fresh context without re-researching.
+> **Prerequisite for cross-reference features:** Phase F1 (GeometricAssociator) must be implemented before F0 can work.
+
+---
+
+### F0 — Non-Cooperative Target Detection (ADS-B Cross-Reference)
+
+> **Purpose:** Identify targets that are detected by the radar system but are NOT broadcasting ADS-B (military aircraft, general aviation without transponder, drones, etc.).
+> **Architecture:** Run both AdsbAssociator and GeometricAssociator in parallel within the same epoch, then cross-reference their outputs. Targets appearing only in the blind associator output are flagged as non-cooperative.
+>
+> **This adds to the system — it does not replace anything.**
+
+**Context — Why This Is Useful:**
+
+- Military aircraft routinely fly with ADS-B off or with inaccurate position data
+- Many general aviation aircraft have no ADS-B Out equipment
+- Drones and UAS platforms typically do not broadcast ADS-B
+- With F1 alone, you get blind targets but cannot distinguish cooperative vs non-cooperative
+- With F0, you can separately visualise friendly/known aircraft vs unknown/uncooperative tracks
+
+**Architecture (per epoch):**
+
+```
+                    ┌──────────────────────────────┐
+                    │  AdsbAssociator (existing)    ├──▶ dict[hex] = {radar, delay, doppler}
+                    └──────────────────────────────┘
+Radar detections ──┤
+                    ┌──────────────────────────────┐
+                    │  GeometricAssociator (F1)     ├──▶ dict[synth_id] = {radar, delay, doppler}
+                    └──────────────────────────────┘
+                             │
+                             ▼
+                    ┌──────────────────────────────┐
+                    │  Cross-Reference Stage (F0)   │
+                    │  - Localise both sets          │
+                    │  - Compare ECEF positions      │
+                    │  - Classify each blind target  │
+                    └──────────────────────────────┘
+                             │
+                    ┌────────┴────────┐
+                    ▼                 ▼
+             Cooperative        Non-Cooperative
+             (matches ADS-B)   (no ADS-B match)
+```
+
+**Algorithm (step by step):**
+
+1. **Run both associators.** For the current epoch, execute `AdsbAssociator.process()` as today. In the same epoch, also execute `GeometricAssociator.process()` on the same radar data.
+
+2. **Localise both sets.** Run the selected localisation algorithm on both associator outputs independently. This produces two position estimate dicts:
+   - `localised_adsb`: `{hex: {"points": [[lat, lon, alt]]}}`
+   - `localised_blind`: `{synth_id: {"points": [[lat, lon, alt]]}}`
+
+3. **Cross-reference.** For each target in `localised_blind`, compute the ECEF distance to every target in `localised_adsb`. If any ADS-B target is within `noncooperative.match_distance` (configurable, default 1000m), classify the blind target as **cooperative** — it's the same aircraft seen by both algorithms. Otherwise, classify it as **non-cooperative**.
+
+4. **Merge output.** Produce a unified output dict that separates the two classes:
+   ```python
+   {
+     "cooperative": {hex: {points, truth}},        # existing schema
+     "noncooperative": {synth_id: {points}}         # new — unknown targets
+   }
+   ```
+
+5. **(Optional) Track persistence (requires F3).** A non-cooperative target may appear in multiple epochs. Use a track ID mapping (`synth_id` → persistent track number) to maintain identity across frames. Without this, the synth_id will change each epoch as detection tuples drift.
+
+**Configuration additions to `config/config.yml`:**
+
+```yaml
+noncooperative:
+  enabled: false                  # toggle non-cooperative detection on/off
+  match_distance: 1000           # metres — max distance to match blind↔ADS-B
+  min_radars: 3                  # min radars for a non-cooperative declaration
+  localisation: "ellipse-parametric-min"  # algorithm for blind-localised targets
+```
+
+**API schema extension:**
+
+```json
+{
+  "hash": "...",
+  "detections_localised": { "hex": {"points": [...]} },
+  "detections_noncooperative": { "synth_id": {"points": [...]} },
+  "cooperative_count": 5,
+  "noncooperative_count": 2
+}
+```
+
+Both fields co-exist. `detections_localised` continues to hold ADS-B-associated results (backward compatible). `detections_noncooperative` is added when `noncooperative.enabled: true`.
+
+**UI changes (`api/map/main.js`):**
+
+- Non-cooperative targets rendered with a distinct icon/colour (e.g. red triangle vs blue aircraft)
+- Toggle layer visibility: "ADS-B targets" / "Non-cooperative targets" / "Both"
+- Hover/click on non-cooperative target shows synthetic ID, detection count, age if tracked
+
+**Implementation plan:**
+
+1. [ ] Add `noncooperative` config block to `config/config.yml`
+2. [ ] In `event/event.py`: after `localised_dets = localisation.process(...)`, add a second block that runs `GeometricAssociator` + localisation if `noncooperative.enabled`
+3. [ ] Implement cross-reference logic: for each blind target, find nearest ADS-B target in ECEF; if distance > `match_distance`, flag as non-cooperative
+4. [ ] Extend API output schema: add `detections_noncooperative` and `cooperative_count` / `noncooperative_count`
+5. [ ] Add `noncooperative` field to the ZMQ message sent from `event` to `api`
+6. [ ] Update `api/api.py` to pass `detections_noncooperative` through to frontend
+7. [ ] Update `api/map/main.js` to render non-cooperative targets with distinct styling
+8. [ ] Add unit test: synthetic 3-radar epoch with 1 ADS-B target + 1 non-cooperative target → both detected and correctly classified
+9. [ ] Add unit test: `noncooperative.enabled: false` → no change to existing output
+10. [ ] Add unit test: `match_distance: 1` (very tight) → no false-positive classification drift
+
+**Known limitations:**
+- Gating is per epoch — a single epoch with poor geometry could misclassify a target. Track-level gating (F3 JIPDA) would resolve this.
+- If both the ADS-B and blind target are the **same** physical aircraft but observed with different detections (different CPIs), they could both be classified as non-cooperative + cooperative separately (true positive for non-cooperative, but double-counting the aircraft). Mitigation: use a temporal proximity filter (within same epoch window) and compare not just position but also Doppler sign.
+- The `GeometricAssociator` must be instantiated even when `noncooperative.enabled` is false for the primary path (ADS-B only). When `noncooperative.enabled: true`, it adds a second localisation call on the blind output.
+- If the `GeometricAssociator` produces no targets (e.g. due to `max_detections` guard or high false-alarm rate), no non-cooperative targets will be reported that epoch. This is correct behaviour.
+
+---
+
 
 ### Background — Why ADS-B Is Currently Required
 
