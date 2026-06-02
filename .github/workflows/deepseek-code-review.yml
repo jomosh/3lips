@@ -34,11 +34,8 @@ jobs:
           diff_path = save_diff_path()
           base_ref = os.environ.get("GITHUB_BASE_REF", "main")
 
-          subprocess.run(
-              ["git", "fetch", "origin", base_ref, "--depth=1"],
-              check=True, capture_output=True
-          )
-
+          # Checkout already fetched full history (fetch-depth: 0), just diff directly
+          # No need to fetch -- the merge base is already available
           with open(diff_path, "w") as f:
               subprocess.run(
                   ["git", "diff", f"origin/{base_ref}...HEAD", "--", "."],

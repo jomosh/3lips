@@ -60,8 +60,8 @@ jobs:
         run: |
           PR_INFO=$(gh pr view "${{ github.event.issue.number }}" --json baseRefName --jq '.baseRefName')
           echo "base_ref=$PR_INFO" >> "$GITHUB_OUTPUT"
-          git fetch origin "$PR_INFO" --depth=1
           DIFF_PATH="${RUNNER_TEMP}/deepseek_${GITHUB_RUN_ID}_pr_diff.txt"
+          # Checkout already fetched full history (fetch-depth: 0), just diff directly
           git diff "origin/${PR_INFO}...HEAD" -- . > "$DIFF_PATH"
           echo "diff_size=$(wc -c < "$DIFF_PATH")" >> "$GITHUB_OUTPUT"
           MAX_SIZE=100000
