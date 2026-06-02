@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   deepseek-review:
+    if: github.actor == 'jomosh'
     runs-on: ubuntu-latest
     name: Review code changes with DeepSeek
     steps:

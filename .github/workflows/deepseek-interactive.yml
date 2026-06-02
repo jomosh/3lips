@@ -15,6 +15,7 @@ jobs:
       github.event.issue.pull_request
       && startsWith(github.event.comment.body, '/review')
       && github.event.comment.user.type != 'Bot'
+      && github.event.comment.user.login == 'jomosh'
     runs-on: ubuntu-latest
     name: Respond to /review command in PR comments
 
