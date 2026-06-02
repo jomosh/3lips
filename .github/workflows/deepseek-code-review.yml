@@ -21,19 +21,43 @@ jobs:
 
       - name: Get changed files diff
         id: diff
+        shell: python3 {0}
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          git diff "origin/${{ github.base_ref }}...HEAD" -- . > /tmp/pr_diff.txt
-          echo "diff_size=$(wc -c < /tmp/pr_diff.txt)" >> "$GITHUB_OUTPUT"
+          import sys, os, subprocess
+          sys.path.insert(0, ".github/scripts")
+          from deepseek_review import save_diff_path
 
-          # Truncate if too large (100KB) to avoid blowing API token limits
-          MAX_SIZE=100000
-          if [ "$(wc -c < /tmp/pr_diff.txt)" -gt "$MAX_SIZE" ]; then
-            head -c "$MAX_SIZE" /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
-            mv /tmp/pr_diff_truncated.txt /tmp/pr_diff.txt
-            echo "diff_truncated=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::Diff was larger than 100KB and was truncated."
-          fi
+          diff_path = save_diff_path()
+          base_ref = os.environ.get("GITHUB_BASE_REF", "main")
+
+          subprocess.run(
+              ["git", "fetch", "origin", base_ref, "--depth=1"],
+              check=True, capture_output=True
+          )
+
+          with open(diff_path, "w") as f:
+              subprocess.run(
+                  ["git", "diff", f"origin/{base_ref}...HEAD", "--", "."],
+                  check=True, stdout=f
+              )
+
+          size = os.path.getsize(diff_path)
+          print(f"diff_path={diff_path}", file=open(os.environ["GITHUB_OUTPUT"], "a"))
+          print(f"diff_size={size}", file=open(os.environ["GITHUB_OUTPUT"], "a"))
+
+          # Truncate if too large (100KB)
+          MAX_SIZE = 100000
+          if size > MAX_SIZE:
+              with open(diff_path, "r") as f:
+                  content = f.read(MAX_SIZE)
+              with open(diff_path, "w") as f:
+                  f.write(content)
+              print(f"diff_truncated=true", file=open(os.environ["GITHUB_OUTPUT"], "a"))
+              print(f"::warning::Diff was larger than {MAX_SIZE} bytes and was truncated.")
+              print(f"diff_truncated=true")
 
       - name: Build and send review request
         id: review
@@ -43,6 +67,8 @@ jobs:
           DEEPSEEK_API_URL: ${{ vars.DEEPSEEK_API_URL || 'https://api.deepseek.com/chat/completions' }}
           DEEPSEEK_MODEL: ${{ vars.DEEPSEEK_MODEL || 'deepseek-chat' }}
           DEEPSEEK_MAX_TOKENS: ${{ vars.DEEPSEEK_MAX_TOKENS || '4096' }}
+          RUNNER_TEMP: ${{ runner.temp }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
         run: |
           import sys
           sys.path.insert(0, ".github/scripts")
@@ -94,7 +120,12 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const reviewPath = '/tmp/review_output.txt';
+            const path = require('path');
+
+            // Find the review output using runner.temp and run_id
+            const runnerTemp = process.env['RUNNER_TEMP'] || '/tmp';
+            const runId = process.env['GITHUB_RUN_ID'] || 'unknown';
+            const reviewPath = path.join(runnerTemp, `deepseek_${runId}_review_output.txt`);
 
             if (!fs.existsSync(reviewPath)) {
               console.log('No review output file found. Skipping comment.');
