@@ -1,0 +1,131 @@
+name: DeepSeek Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  deepseek-review:
+    runs-on: ubuntu-latest
+    name: Review code changes with DeepSeek
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files diff
+        id: diff
+        run: |
+          # Fetch the base branch to compare against
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          # Get the diff as a patch file (limit to avoid blowing the API)
+          git diff "origin/${{ github.base_ref }}...HEAD" -- . > /tmp/pr_diff.txt
+          echo "diff_size=$(wc -c < /tmp/pr_diff.txt)" >> "$GITHUB_OUTPUT"
+          # If diff is too large, truncate to ~100KB for API limits
+          MAX_SIZE=100000
+          if [ "$(wc -c < /tmp/pr_diff.txt)" -gt "$MAX_SIZE" ]; then
+            head -c "$MAX_SIZE" /tmp/pr_diff.txt > /tmp/pr_diff_truncated.txt
+            echo "Diff was too large, truncated to ${MAX_SIZE} bytes." > /tmp/pr_diff_truncated_notice.txt
+            mv /tmp/pr_diff_truncated.txt /tmp/pr_diff.txt
+          fi
+
+      - name: Call DeepSeek API to review code
+        id: review
+        shell: bash
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: |
+          DIFF_CONTENT=$(cat /tmp/pr_diff.txt)
+          # Escape for JSON
+          DIFF_ESCAPED=$(printf '%s' "$DIFF_CONTENT" | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+
+          PROMPT="You are an expert code reviewer. Review the following diff from a GitHub Pull Request.
+
+Provide your review in the following format:
+
+## Summary
+Brief overview of the changes.
+
+## Code Quality & Best Practices
+- Issues found (if any).
+
+## Potential Bugs & Security Concerns
+- Issues found (if any).
+
+## Suggestions for Improvement
+- Suggestions (if any).
+
+## Overall Verdict
+✅ Approve / ❌ Request Changes (choose one).
+
+Here is the diff:
+\`\`\`diff
+${DIFF_CONTENT}
+\`\`\`"
+
+          PAYLOAD=$(cat <<EOF
+{
+  "model": "deepseek-chat",
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a senior software engineer reviewing a pull request. Be thorough, constructive, and concise."
+    },
+    {
+      "role": "user",
+      "content": ${DIFF_ESCAPED}
+    }
+  ],
+  "max_tokens": 4096,
+  "temperature": 0.2
+}
+EOF
+)
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${DEEPSEEK_API_KEY}" \
+            -d "$PAYLOAD" \
+            "https://api.deepseek.com/chat/completions")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "API call failed with status $HTTP_CODE"
+            echo "Response: $BODY"
+            exit 1
+          fi
+
+          REVIEW_TEXT=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])")
+          echo "$REVIEW_TEXT" > /tmp/review_output.txt
+          echo "review_done=true" >> "$GITHUB_OUTPUT"
+
+      - name: Post review as PR comment
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const reviewPath = '/tmp/review_output.txt';
+
+            if (!fs.existsSync(reviewPath)) {
+              console.log('No review output file found. Skipping comment.');
+              return;
+            }
+
+            const reviewBody = fs.readFileSync(reviewPath, 'utf8');
+            const { data: comment } = await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## 🤖 DeepSeek Code Review\n\n${reviewBody}\n\n---\n*Powered by DeepSeek API*`
+            });
+
+            console.log(`Review posted as comment #${comment.id}`);
