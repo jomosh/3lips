@@ -300,7 +300,7 @@ async def callback_message_received(msg):
   return output
 
 # init messaging
-message_api_request = Message('event', 6969)
+message_api_request = Message('0.0.0.0', 6969)
 message_api_request.set_callback_message_received(callback_message_received)
 
 if __name__ == "__main__":
