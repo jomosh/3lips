@@ -15,8 +15,6 @@ services:
       - 49156:5000
     networks:
       - 3lips
-    extra_hosts:
-      - "event:host-gateway"
     volumes:
       - ./config:/app/config
       - ./common:/app/common

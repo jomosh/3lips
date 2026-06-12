@@ -172,12 +172,17 @@ def _resolve_and_classify(host):
   # Check if any resolved IP is private
   for ip in ips:
     if _is_private_ip(ip):
-      # Use resolved IP as target to prevent DNS rebinding
-      target = ip
-      if port:
+      # Use resolved IP as target to prevent DNS rebinding.
+      # IPv6 addresses must be bracketed when a port is present,
+      # e.g. [fe80::1]:8080 (RFC 3986 section 3.2.2).
+      if ':' in ip and port:
+        target = f"[{ip}]:{port}"
+      elif port:
         target = f"{ip}:{port}"
       elif ':' in ip:
-        target = f"[{ip}]"  # bracket IPv6 for URL construction
+        target = f"[{ip}]"
+      else:
+        target = ip
       return True, target
   
   return False, hostname
