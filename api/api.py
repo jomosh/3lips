@@ -10,6 +10,7 @@ import time
 import asyncio
 import yaml
 import requests
+import re
 
 from common.Message import Message
 
@@ -113,37 +114,79 @@ def serve_map(file):
 def config():
   return config_data
 
+# helper function to perform secure, server-side HTTP/HTTPS requests with DNS/Connect timeouts
+def fetch_proxied_url(host, path, preferred_scheme='http'):
+  host = host.strip('/')
+  path = path.lstrip('/')
+  
+  # For local/private network nodes, avoid SSL to prevent connection handshake timeouts
+  if any(host.startswith(p) for p in ['10.', '192.168.', '172.', '127.', 'localhost', '[::1]']):
+    schemes = ['http']
+  else:
+    # Otherwise, try preferred first, then fallback
+    schemes = [preferred_scheme, 'http' if preferred_scheme == 'https' else 'https']
+
+  last_err = None
+  for scheme in schemes:
+    try:
+      url = f"{scheme}://{host}/{path}"
+      response = requests.get(url, timeout=(3.0, 3.0))
+      response.raise_for_status()
+      return response
+    except requests.exceptions.RequestException as e:
+      last_err = e
+      # Fall back only if we didn't receive a definitive HTTP error (like 404)
+      if scheme == 'https' and not getattr(e, 'response', None):
+        continue
+      break
+  raise last_err
+
 # proxy radar config to avoid direct browser-to-node requests
 @app.route('/api/proxy/config')
 def proxy_config():
   server = request.args.get('server')
   if not server:
-    return 'Missing server parameter', 400
+    return jsonify(error="Missing server parameter"), 400
+  
+  # Sanitize input: only allow valid hostname characters
+  if not re.match(r'^[a-zA-Z0-9.:-]+$', server):
+    return jsonify(error="Invalid server format"), 400
+    
+  # Strict whitelist validation against allowed servers in config
   if server not in valid['servers']:
-    return 'Invalid server parameter', 403
+    return jsonify(error="Server not authorized"), 403
+    
   try:
-    url = f"http://{server}/api/config"
-    response = requests.get(url, timeout=3)
-    response.raise_for_status()
+    # Try HTTPS fallback for public nodes, default to HTTP
+    response = fetch_proxied_url(server, 'api/config', preferred_scheme='http')
     return jsonify(response.json())
   except requests.exceptions.RequestException as e:
-    return jsonify(error=f"Error proxying radar config: {str(e)}"), 502
+    app.logger.error(f"Proxy error fetching radar config from {server}: {str(e)}")
+    return jsonify(error="Failed to proxy radar config request"), 502
 
 # proxy adsb to avoid direct browser-to-node requests
 @app.route('/api/proxy/adsb')
 def proxy_adsb():
   url = request.args.get('url')
   if not url:
-    return 'Missing url parameter', 400
+    return jsonify(error="Missing url parameter"), 400
+    
+  # Sanitize input: only allow valid hostname characters
+  if not re.match(r'^[a-zA-Z0-9.:-]+$', url):
+    return jsonify(error="Invalid URL format"), 400
+    
+  # Strict whitelist validation against allowed ADS-B servers in config
   if url not in valid['adsbs']:
-    return 'Invalid adsb parameter', 403
+    return jsonify(error="ADS-B server not authorized"), 403
+    
   try:
-    full_url = f"http://{url}/data/aircraft.json"
-    response = requests.get(full_url, timeout=3)
-    response.raise_for_status()
+    tar1090_https = config_data.get('map', {}).get('tar1090_https', False)
+    preferred = 'https' if tar1090_https else 'http'
+    response = fetch_proxied_url(url, 'data/aircraft.json', preferred_scheme=preferred)
     return jsonify(response.json())
   except requests.exceptions.RequestException as e:
-    return jsonify(error=f"Error proxying adsb: {str(e)}"), 502
+    app.logger.error(f"Proxy error fetching ADS-B data from {url}: {str(e)}")
+    return jsonify(error="Failed to proxy ADS-B request"), 502
 
 if __name__ == "__main__":
   app.run()
