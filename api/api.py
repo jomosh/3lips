@@ -11,6 +11,8 @@ import asyncio
 import yaml
 import requests
 import re
+import json as json_lib
+
 
 from common.Message import Message
 
@@ -114,16 +116,55 @@ def serve_map(file):
 def config():
   return config_data
 
+# helper function to determine if a host is on a private/local network
+# RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+# RFC 4193: fc00::/7 (IPv6 unique local)
+def _is_private_host(host):
+  host_lower = host.lower()
+  
+  # Strip port if present
+  if ':' in host_lower and host_lower.count(':') == 1:
+    host_lower = host_lower.split(':')[0]
+
+  # IPv6 local (loopback and link-local)
+  if host_lower.startswith('['):
+    host_lower = host_lower.strip('[]').split('%')[0]
+  
+  if host_lower in ('localhost', '::1', '127.0.0.1'):
+    return True
+    
+  # IPv4 private ranges
+  if host_lower.startswith('10.') or host_lower.startswith('127.'):
+    return True
+  if host_lower.startswith('192.168.'):
+    return True
+  if host_lower.startswith('172.'):
+    # 172.16.0.0/12 → 172.16-31.x.x
+    parts = host_lower.split('.')
+    if len(parts) >= 2:
+      try:
+        second = int(parts[1])
+        if 16 <= second <= 31:
+          return True
+      except ValueError:
+        pass
+        
+  # IPv6 unique local fc00::/7 → fc00-fdff
+  if host_lower.startswith('fc') or host_lower.startswith('fd'):
+    return True
+    
+  return False
+
 # helper function to perform secure, server-side HTTP/HTTPS requests with DNS/Connect timeouts
 def fetch_proxied_url(host, path, preferred_scheme='http'):
   host = host.strip('/')
   path = path.lstrip('/')
   
-  # For local/private network nodes, avoid SSL to prevent connection handshake timeouts
-  if any(host.startswith(p) for p in ['10.', '192.168.', '172.', '127.', 'localhost', '[::1]']):
+  # For private network nodes, avoid SSL (no certificate authority on private IPs)
+  if _is_private_host(host):
     schemes = ['http']
   else:
-    # Otherwise, try preferred first, then fallback
+    # Public hosts: try preferred first, fall back to alternative
     schemes = [preferred_scheme, 'http' if preferred_scheme == 'https' else 'https']
 
   last_err = None
@@ -135,11 +176,12 @@ def fetch_proxied_url(host, path, preferred_scheme='http'):
       return response
     except requests.exceptions.RequestException as e:
       last_err = e
-      # Fall back only if we didn't receive a definitive HTTP error (like 404)
+      # Fall back only for connection-level errors (not HTTP error responses)
       if scheme == 'https' and not getattr(e, 'response', None):
         continue
       break
   raise last_err
+
 
 # proxy radar config to avoid direct browser-to-node requests
 @app.route('/api/proxy/config')
@@ -160,6 +202,9 @@ def proxy_config():
     # Try HTTPS fallback for public nodes, default to HTTP
     response = fetch_proxied_url(server, 'api/config', preferred_scheme='http')
     return jsonify(response.json())
+  except ValueError as e:
+    app.logger.error(f"Proxy error: non-JSON response from radar config {server}: {str(e)}")
+    return jsonify(error="Invalid response from radar server"), 502
   except requests.exceptions.RequestException as e:
     app.logger.error(f"Proxy error fetching radar config from {server}: {str(e)}")
     return jsonify(error="Failed to proxy radar config request"), 502
@@ -184,6 +229,9 @@ def proxy_adsb():
     preferred = 'https' if tar1090_https else 'http'
     response = fetch_proxied_url(url, 'data/aircraft.json', preferred_scheme=preferred)
     return jsonify(response.json())
+  except ValueError as e:
+    app.logger.error(f"Proxy error: non-JSON response from ADS-B {url}: {str(e)}")
+    return jsonify(error="Invalid response from ADS-B server"), 502
   except requests.exceptions.RequestException as e:
     app.logger.error(f"Proxy error fetching ADS-B data from {url}: {str(e)}")
     return jsonify(error="Failed to proxy ADS-B request"), 502
