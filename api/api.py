@@ -9,6 +9,7 @@ import os
 import time
 import asyncio
 import yaml
+import requests
 
 from common.Message import Message
 
@@ -111,6 +112,38 @@ def serve_map(file):
 @app.route('/config')
 def config():
   return config_data
+
+# proxy radar config to avoid direct browser-to-node requests
+@app.route('/api/proxy/config')
+def proxy_config():
+  server = request.args.get('server')
+  if not server:
+    return 'Missing server parameter', 400
+  if server not in valid['servers']:
+    return 'Invalid server parameter', 403
+  try:
+    url = f"http://{server}/api/config"
+    response = requests.get(url, timeout=3)
+    response.raise_for_status()
+    return jsonify(response.json())
+  except requests.exceptions.RequestException as e:
+    return jsonify(error=f"Error proxying radar config: {str(e)}"), 502
+
+# proxy adsb to avoid direct browser-to-node requests
+@app.route('/api/proxy/adsb')
+def proxy_adsb():
+  url = request.args.get('url')
+  if not url:
+    return 'Missing url parameter', 400
+  if url not in valid['adsbs']:
+    return 'Invalid adsb parameter', 403
+  try:
+    full_url = f"http://{url}/data/aircraft.json"
+    response = requests.get(full_url, timeout=3)
+    response.raise_for_status()
+    return jsonify(response.json())
+  except requests.exceptions.RequestException as e:
+    return jsonify(error=f"Error proxying adsb: {str(e)}"), 502
 
 if __name__ == "__main__":
   app.run()
