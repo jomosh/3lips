@@ -11,10 +11,13 @@ import asyncio
 import yaml
 import requests
 import re
-import json as json_lib
+import socket
 
 
 from common.Message import Message
+
+# Module-level constants
+_PROXY_TIMEOUT = (3.0, 3.0)  # (connect, read) timeout in seconds for proxy requests
 
 app = Flask(__name__)
 
@@ -116,8 +119,12 @@ def serve_map(file):
 def config():
   return config_data
 
-# helper function to determine if a host is on a private/local network
+# helper function to determine if a host is on a private/local network.
+# Resolves hostnames to IPs via DNS (mitigating DNS rebinding), then checks
+# against known private ranges.
 # RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+# RFC 6598: 100.64.0.0/10 (Carrier-grade NAT)
+# RFC 4291: fe80::/10 (IPv6 link-local)
 # RFC 4193: fc00::/7 (IPv6 unique local)
 def _is_private_host(host):
   host_lower = host.lower()
@@ -130,17 +137,37 @@ def _is_private_host(host):
   if host_lower.startswith('['):
     host_lower = host_lower.strip('[]').split('%')[0]
   
-  if host_lower in ('localhost', '::1', '127.0.0.1'):
+  # Resolve hostname to IP addresses to prevent DNS rebinding attacks.
+  # This ensures that even if a hostname points to a private IP, we detect it.
+  try:
+    addrinfo = socket.getaddrinfo(host_lower, None)
+    ips = [info[4][0] for info in addrinfo]
+  except socket.gaierror as e:
+    app.logger.error(f"DNS resolution failed for {host_lower}: {str(e)}")
+    return True  # Treat unresolvable hosts as private (fail closed)
+  
+  for ip in ips:
+    if _is_private_ip(ip):
+      return True
+  
+  return False
+
+def _is_private_ip(ip):
+  """Check a resolved IP address against private/local ranges."""
+  # Loopback
+  if ip in ('127.0.0.1', '::1'):
+    return True
+  if ip.startswith('127.'):
     return True
     
   # IPv4 private ranges
-  if host_lower.startswith('10.') or host_lower.startswith('127.'):
+  if ip.startswith('10.'):
     return True
-  if host_lower.startswith('192.168.'):
+  if ip.startswith('192.168.'):
     return True
-  if host_lower.startswith('172.'):
+  if ip.startswith('172.'):
     # 172.16.0.0/12 → 172.16-31.x.x
-    parts = host_lower.split('.')
+    parts = ip.split('.')
     if len(parts) >= 2:
       try:
         second = int(parts[1])
@@ -148,14 +175,29 @@ def _is_private_host(host):
           return True
       except ValueError:
         pass
+  
+  # Carrier-grade NAT (100.64.0.0/10)
+  if ip.startswith('100.'):
+    parts = ip.split('.')
+    if len(parts) >= 2:
+      try:
+        second = int(parts[1])
+        if 64 <= second <= 127:
+          return True
+      except ValueError:
+        pass
         
-  # IPv6 unique local fc00::/7 → fc00-fdff
-  if host_lower.startswith('fc') or host_lower.startswith('fd'):
+  # IPv6 unique local fc00::/7 → fc00-fdff and link-local fe80::/10
+  if ip.startswith('fc') or ip.startswith('fd'):
+    return True
+  if ip.startswith('fe80:'):
     return True
     
   return False
 
-# helper function to perform secure, server-side HTTP/HTTPS requests with DNS/Connect timeouts
+# helper function to perform secure, server-side HTTP/HTTPS requests
+# with configurable DNS/Connect timeouts. All outgoing proxy traffic
+# goes through this single function.
 def fetch_proxied_url(host, path, preferred_scheme='http'):
   host = host.strip('/')
   path = path.lstrip('/')
@@ -171,7 +213,7 @@ def fetch_proxied_url(host, path, preferred_scheme='http'):
   for scheme in schemes:
     try:
       url = f"{scheme}://{host}/{path}"
-      response = requests.get(url, timeout=(3.0, 3.0))
+      response = requests.get(url, timeout=_PROXY_TIMEOUT)
       response.raise_for_status()
       return response
     except requests.exceptions.RequestException as e:

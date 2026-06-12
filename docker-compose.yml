@@ -28,7 +28,8 @@ services:
       context: ./event
       dockerfile: Dockerfile
     image: 3lips-event
-    network_mode: host
+    networks:
+      - 3lips
     volumes:
       - ./config:/app/config
       - ./common:/app/common
