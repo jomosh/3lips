@@ -90,7 +90,10 @@ function formatAltitude(alt_m) {
 }
 
 /**
- * @brief Updates the legend bar labels to reflect the current altitude unit.
+ * @brief Rebuilds the legend bar labels with proportional positioning.
+ * Label positions are set via CSS left: X% where X = altitude / 12000 * 100,
+ * so the spacing accurately reflects the non-uniform altitude brackets.
+ * Called on map load and whenever the altitude unit is toggled.
  */
 function updateLegendLabels() {
   var labelsEl = document.getElementById('legend-labels');
@@ -98,11 +101,14 @@ function updateLegendLabels() {
   var breakpoints_m = [0, 150, 300, 600, 1200, 1800, 2400, 3000, 6000, 9000, 12000];
   var html = '';
   for (var i = 0; i < breakpoints_m.length; i++) {
+    var pct = (breakpoints_m[i] / 12000) * 100;
+    var text;
     if (altUnit === 'ft') {
-      html += '<span>' + Math.round(breakpoints_m[i] * 3.28084) + 'ft</span>';
+      text = Math.round(breakpoints_m[i] * 3.28084) + 'ft';
     } else {
-      html += '<span>' + breakpoints_m[i] + 'm</span>';
+      text = breakpoints_m[i] + 'm';
     }
+    html += '<span style="left:' + pct.toFixed(2) + '%;">' + text + '</span>';
   }
   labelsEl.innerHTML = html;
 }
@@ -425,6 +431,9 @@ map.on('load', function () {
   // initialise settings button text (replaces inline <script> in HTML)
   var btnUnit = document.getElementById('btn-alt-unit');
   if (btnUnit) btnUnit.textContent = 'Unit: ' + (altUnit === 'm' ? 'metres' : 'feet');
+
+  // replace static legend labels with proportionally-positioned ones
+  updateLegendLabels();
 
   // start polling event loops
   if (adsb_url) {

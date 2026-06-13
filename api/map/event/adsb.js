@@ -56,7 +56,7 @@ function processAircraftData(aircraftData) {
   const flight = aircraftData.flight;
   const lat = aircraftData.lat;
   const lon = aircraftData.lon;
-  const alt_baro_ft = aircraftData.alt_baro; // dump1090/tar1090 reports baro altitude in FEET
+  let alt_baro_ft = aircraftData.alt_baro; // dump1090/tar1090 reports baro altitude in FEET
   const seen_pos = aircraftData.seen_pos;
 
   // Check if the aircraft has valid position data
