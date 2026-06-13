@@ -6,21 +6,22 @@
 
 from flask import Flask, render_template, request, jsonify, send_from_directory
 import os
+import sys
 import time
 import asyncio
+import uuid
 import yaml
 import requests
-import re
 import socket
 import urllib.parse
-
+from collections import defaultdict
 
 from common.Message import Message
 
 # Module-level constants — override via environment variable, e.g. PROXY_TIMEOUT=5.0
 _PROXY_TIMEOUT_DEFAULT = (3.0, 3.0)
 
-def _get_proxy_timeout():
+def _get_proxy_timeout() -> tuple:
   """Read proxy timeout from environment or fall back to default."""
   raw = os.environ.get('PROXY_TIMEOUT')
   if raw is not None:
@@ -133,75 +134,71 @@ def serve_map(file):
 def config():
   return config_data
 
-# helper function to determine if a host is on a private/local network.
-# Resolves hostnames to IPs via DNS (mitigating DNS rebinding), then checks
-# against known private ranges.
-# Returns (is_private, resolved_ip_or_host) tuple so the caller can use the
-# resolved IP directly — this eliminates the TOCTOU race between the IP check
-# and the actual request (the hostname could resolve to a different IP).
+# ---------------------------------------------------------------------------
+# Simple in-memory rate limiter for proxy endpoints
+# ---------------------------------------------------------------------------
+# Window: 60 seconds, max 30 requests per window per client IP.
+# No extra dependencies required — uses a dict of timestamps per IP.
+_RATE_LIMIT_WINDOW = 60       # seconds
+_RATE_LIMIT_MAX = 30          # requests per window
+_rate_limit_store: dict = defaultdict(list)
+
+def _check_rate_limit(client_ip: str) -> bool:
+  """Return True if the client has exceeded the rate limit."""
+  now = time.time()
+  window_start = now - _RATE_LIMIT_WINDOW
+  # Prune old entries
+  _rate_limit_store[client_ip] = [
+    ts for ts in _rate_limit_store[client_ip] if ts > window_start
+  ]
+  if len(_rate_limit_store[client_ip]) >= _RATE_LIMIT_MAX:
+    return False
+  _rate_limit_store[client_ip].append(now)
+  return True
+
+
+# ---------------------------------------------------------------------------
+# Private-IP detection and DNS-resolved proxying
+# ---------------------------------------------------------------------------
+# DNS rebinding / TOCTOU mitigation strategy:
+#   1. Resolve the hostname to all its IPs via getaddrinfo.
+#   2. Classify each resolved IP as private or public.
+#   3. If ANY resolved IP is private, treat the host as private and
+#      connect using the resolved IP (not the hostname), which prevents
+#      a second DNS lookup and closes the TOCTOU window.
+#   4. If ALL resolved IPs are public, still connect using the FIRST
+#      resolved IP and set the Host header to the original hostname.
+#      This avoids a second DNS lookup that could return a different IP.
+#   5. The Host header ensures virtual-host routing still works.
+#
 # RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
 # RFC 6598: 100.64.0.0/10 (Carrier-grade NAT)
 # RFC 4291: fe80::/10 (IPv6 link-local)
-# RFC 4193: fc00::/7 (IPv6 unique local)
-def _resolve_and_classify(host):
-  """Resolve hostname to IP and classify as private/public.
-  
-  Returns (is_private, target_host) where target_host is the resolved IP
-  if private, or the original hostname if public. This prevents TOCTOU
-  attacks where DNS changes between check and request.
-  """
-  # Strip port and brackets using urllib.parse
-  if '://' not in host:
-    host = '//' + host
-  parsed = urllib.parse.urlparse(host)
-  hostname = parsed.hostname if parsed.hostname else host
-  port = parsed.port
-  
-  # Quick return for localhost / loopback
-  if hostname in ('localhost', '::1', '127.0.0.1', '127.0.1.1'):
-    return True, hostname
-  
-  # Resolve hostname to IP addresses
-  try:
-    addrinfo = socket.getaddrinfo(hostname, port or None)
-    ips = [info[4][0] for info in addrinfo]
-  except socket.gaierror as e:
-    app.logger.error(f"DNS resolution failed for {hostname}: {str(e)}")
-    return True, hostname  # Treat unresolvable hosts as private (fail closed)
-  
-  # Check if any resolved IP is private
-  for ip in ips:
-    if _is_private_ip(ip):
-      # Use resolved IP as target to prevent DNS rebinding.
-      # IPv6 addresses must be bracketed when a port is present,
-      # e.g. [fe80::1]:8080 (RFC 3986 section 3.2.2).
-      if ':' in ip and port:
-        target = f"[{ip}]:{port}"
-      elif port:
-        target = f"{ip}:{port}"
-      elif ':' in ip:
-        target = f"[{ip}]"
-      else:
-        target = ip
-      return True, target
-  
-  return False, hostname
+# RFC 4193: fc00::/7  (IPv6 unique local)
 
-def _is_private_ip(ip):
-  """Check a resolved IP address against private/local ranges."""
+
+def _is_private_ip(ip: str) -> bool:
+  """Check a resolved IP address against private/local ranges.
+
+  Args:
+    ip: A string representation of an IPv4 or IPv6 address.
+
+  Returns:
+    True if the IP falls within any private, loopback, link-local,
+    unique-local, or carrier-grade-NAT range.
+  """
   # Loopback
   if ip in ('127.0.0.1', '::1'):
     return True
   if ip.startswith('127.'):
     return True
-    
-  # IPv4 private ranges
+
+  # IPv4 private ranges (RFC 1918)
   if ip.startswith('10.'):
     return True
   if ip.startswith('192.168.'):
     return True
   if ip.startswith('172.'):
-    # 172.16.0.0/12 → 172.16-31.x.x
     parts = ip.split('.')
     if len(parts) >= 2:
       try:
@@ -210,8 +207,8 @@ def _is_private_ip(ip):
           return True
       except ValueError:
         pass
-  
-  # Carrier-grade NAT (100.64.0.0/10)
+
+  # Carrier-grade NAT (RFC 6598: 100.64.0.0/10 → 100.64–127.x.x)
   if ip.startswith('100.'):
     parts = ip.split('.')
     if len(parts) >= 2:
@@ -221,107 +218,221 @@ def _is_private_ip(ip):
           return True
       except ValueError:
         pass
-        
-  # IPv6 unique local fc00::/7 → fc00-fdff and link-local fe80::/10
+
+  # IPv6 unique local (RFC 4193: fc00::/7 → fc00–fdff)
   if ip.startswith('fc') or ip.startswith('fd'):
     return True
+  # IPv6 link-local (RFC 4291: fe80::/10)
   if ip.startswith('fe80:'):
     return True
-    
+
   return False
 
-# helper function to perform secure, server-side HTTP/HTTPS requests
-# with configurable DNS/Connect timeouts. All outgoing proxy traffic
-# goes through this single function.
-def fetch_proxied_url(host, path, preferred_scheme='http'):
+
+def _resolve_and_classify(host: str) -> tuple:
+  """Resolve hostname to IPs and classify as private or public.
+
+  Performs DNS resolution once and returns the *resolved IP address*
+  for use in the actual HTTP request.  This closes the TOCTOU window
+  between the private-IP check and the outbound connection because
+  ``requests`` is given a literal IP rather than a hostname that would
+  trigger a second DNS lookup.
+
+  Args:
+    host: A hostname, optionally with port (``example.com:8080``) or
+      brackets for IPv6 (``[::1]:8080``).
+
+  Returns:
+    (is_private, target) tuple where ``target`` is the resolved IP
+    address formatted for use in a URL (bracketed if IPv6, with port
+    appended if one was supplied).  If DNS resolution fails, returns
+    ``(True, hostname)`` — a fail-closed posture.
+  """
+  # Extract hostname and optional port using urllib.parse
+  if '://' not in host:
+    host = '//' + host
+  parsed = urllib.parse.urlparse(host)
+  hostname = parsed.hostname if parsed.hostname else host
+  port = parsed.port
+
+  # Quick return for localhost / loopback
+  if hostname.lower() in ('localhost', '::1', '127.0.0.1', '127.0.1.1'):
+    return True, hostname
+
+  # Resolve hostname to IP addresses
+  try:
+    addrinfo = socket.getaddrinfo(hostname, port or None)
+    ips = [info[4][0] for info in addrinfo]
+  except socket.gaierror as e:
+    app.logger.error(f"DNS resolution failed for {hostname}: {str(e)}")
+    return True, hostname  # Treat unresolvable hosts as private (fail closed)
+
+  if not ips:
+    app.logger.error(f"DNS returned no addresses for {hostname}")
+    return True, hostname
+
+  # Check if ANY resolved IP is private
+  is_private = any(_is_private_ip(ip) for ip in ips)
+
+  # Use the first resolved IP for the actual request.
+  # By passing a literal IP to requests.get() we avoid a second DNS
+  # lookup, fully closing the TOCTOU window between check and connect.
+  resolved_ip = ips[0]
+
+  # Format for URL: bracket IPv6 addresses when a port is present
+  # (RFC 3986 §3.2.2)
+  if ':' in resolved_ip and port:
+    target = f"[{resolved_ip}]:{port}"
+  elif port:
+    target = f"{resolved_ip}:{port}"
+  elif ':' in resolved_ip:
+    target = f"[{resolved_ip}]"
+  else:
+    target = resolved_ip
+
+  return is_private, target
+
+
+def fetch_proxied_url(host: str, path: str,
+                      preferred_scheme: str = 'http') -> requests.Response:
+  """Perform a secure, server-side HTTP/HTTPS request.
+
+  All outgoing proxy traffic goes through this single function.
+  DNS is resolved once and the resolved IP is used in the request URL,
+  eliminating DNS rebinding and TOCTOU vulnerabilities.
+
+  Args:
+    host: Hostname (with optional port), e.g. ``"radar.local:8080"``.
+    path: URL path, e.g. ``"api/config"``.
+    preferred_scheme: ``"http"`` or ``"https"`` to try first.
+
+  Returns:
+    A ``requests.Response`` object.
+
+  Raises:
+    requests.exceptions.RequestException: If all schemes fail.
+  """
   host = host.strip('/')
   path = path.lstrip('/')
-  
-  # Resolve hostname to IP and classify as private/public.
-  # Using the resolved IP for the actual request closes the TOCTOU
-  # window between the private-IP check and the HTTP request.
+
+  # Resolve once — target_host is now a literal IP address.
   is_private, target_host = _resolve_and_classify(host)
-  original_host = host  # keep original for Host header
-  
+  original_hostname = host  # preserve for Host header
+
   if is_private:
     schemes = ['http']
   else:
-    # Public hosts: try preferred first, fall back to alternative
-    schemes = [preferred_scheme, 'http' if preferred_scheme == 'https' else 'https']
+    schemes = [preferred_scheme,
+               'http' if preferred_scheme == 'https' else 'https']
 
   last_err = None
   for scheme in schemes:
     try:
       url = f"{scheme}://{target_host}/{path}"
-      # Set the Host header so the backend receives the original hostname
-      # (important for virtual-host routing on the radar/ADS-B servers)
-      headers = {'Host': original_host}
+      headers = {'Host': original_hostname}
       response = requests.get(url, timeout=_PROXY_TIMEOUT, headers=headers)
       response.raise_for_status()
       return response
     except requests.exceptions.RequestException as e:
       last_err = e
       # Fall back only for connection-level errors (not HTTP error responses).
-      # requests raises ConnectionError (no .response) for DNS/timeout/refused,
-      # and HTTPError (has .response) for 4xx/5xx.
       if scheme == 'https' and not getattr(e, 'response', None):
         continue
       break
   raise last_err
 
 
-# proxy radar config to avoid direct browser-to-node requests
+# ---------------------------------------------------------------------------
+# Proxy endpoints
+# ---------------------------------------------------------------------------
+
+def _make_proxy_error(correlation_id: str, msg: str, status: int) -> tuple:
+  """Build a generic error response with a correlation ID for debugging."""
+  return jsonify(error=msg, correlation_id=correlation_id), status
+
+
 @app.route('/api/proxy/config')
 def proxy_config():
+  """Proxy radar /api/config endpoints to avoid direct browser-to-node requests."""
+  correlation_id = str(uuid.uuid4())[:8]
+
+  # Rate limiting
+  client_ip = request.remote_addr or 'unknown'
+  if not _check_rate_limit(client_ip):
+    app.logger.warning(f"[{correlation_id}] Rate limit exceeded for {client_ip}")
+    return _make_proxy_error(correlation_id, "Too many requests", 429)
+
   server = request.args.get('server')
   if not server:
-    return jsonify(error="Missing server parameter"), 400
-  
-  # Sanitize input: only allow valid hostname characters
-  if not re.match(r'^[a-zA-Z0-9.:-]+$', server):
-    return jsonify(error="Invalid server format"), 400
-    
+    return _make_proxy_error(correlation_id, "Missing server parameter", 400)
+
+  # Validate input: extract hostname via urllib.parse for robust parsing
+  parsed = urllib.parse.urlparse('//' + server)
+  if not parsed.hostname:
+    return _make_proxy_error(correlation_id, "Invalid server format", 400)
+
   # Strict whitelist validation against allowed servers in config
   if server not in valid['servers']:
-    return jsonify(error="Server not authorized"), 403
-    
+    app.logger.warning(f"[{correlation_id}] Unauthorized server: {server}")
+    return _make_proxy_error(correlation_id, "Server not authorized", 403)
+
   try:
-    # Try HTTPS fallback for public nodes, default to HTTP
     response = fetch_proxied_url(server, 'api/config', preferred_scheme='http')
     return jsonify(response.json())
   except ValueError as e:
-    app.logger.error(f"Proxy error: non-JSON response from radar config {server}: {str(e)}")
-    return jsonify(error="Failed to proxy request"), 502
+    app.logger.error(
+      f"[{correlation_id}] Proxy error: non-JSON response "
+      f"from radar config {server}: {str(e)}")
+    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
   except requests.exceptions.RequestException as e:
-    app.logger.error(f"Proxy error fetching radar config from {server}: {str(e)}")
-    return jsonify(error="Failed to proxy request"), 502
+    app.logger.error(
+      f"[{correlation_id}] Proxy error fetching radar config "
+      f"from {server}: {str(e)}")
+    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
 
-# proxy adsb to avoid direct browser-to-node requests
+
 @app.route('/api/proxy/adsb')
 def proxy_adsb():
+  """Proxy ADS-B data endpoints to avoid direct browser-to-node requests."""
+  correlation_id = str(uuid.uuid4())[:8]
+
+  # Rate limiting
+  client_ip = request.remote_addr or 'unknown'
+  if not _check_rate_limit(client_ip):
+    app.logger.warning(f"[{correlation_id}] Rate limit exceeded for {client_ip}")
+    return _make_proxy_error(correlation_id, "Too many requests", 429)
+
   url = request.args.get('url')
   if not url:
-    return jsonify(error="Missing url parameter"), 400
-    
-  # Sanitize input: only allow valid hostname characters
-  if not re.match(r'^[a-zA-Z0-9.:-]+$', url):
-    return jsonify(error="Invalid URL format"), 400
-    
+    return _make_proxy_error(correlation_id, "Missing url parameter", 400)
+
+  # Validate input: extract hostname via urllib.parse for robust parsing
+  parsed = urllib.parse.urlparse('//' + url)
+  if not parsed.hostname:
+    return _make_proxy_error(correlation_id, "Invalid URL format", 400)
+
   # Strict whitelist validation against allowed ADS-B servers in config
   if url not in valid['adsbs']:
-    return jsonify(error="ADS-B server not authorized"), 403
-    
+    app.logger.warning(f"[{correlation_id}] Unauthorized ADS-B server: {url}")
+    return _make_proxy_error(correlation_id, "ADS-B server not authorized", 403)
+
   try:
     tar1090_https = config_data.get('map', {}).get('tar1090_https', False)
     preferred = 'https' if tar1090_https else 'http'
-    response = fetch_proxied_url(url, 'data/aircraft.json', preferred_scheme=preferred)
+    response = fetch_proxied_url(url, 'data/aircraft.json',
+                                 preferred_scheme=preferred)
     return jsonify(response.json())
   except ValueError as e:
-    app.logger.error(f"Proxy error: non-JSON response from ADS-B {url}: {str(e)}")
-    return jsonify(error="Failed to proxy request"), 502
+    app.logger.error(
+      f"[{correlation_id}] Proxy error: non-JSON response "
+      f"from ADS-B {url}: {str(e)}")
+    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
   except requests.exceptions.RequestException as e:
-    app.logger.error(f"Proxy error fetching ADS-B data from {url}: {str(e)}")
-    return jsonify(error="Failed to proxy request"), 502
+    app.logger.error(
+      f"[{correlation_id}] Proxy error fetching ADS-B data "
+      f"from {url}: {str(e)}")
+    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
+
 
 if __name__ == "__main__":
   app.run()
