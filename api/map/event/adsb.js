@@ -16,8 +16,11 @@ function event_adsb() {
       console.error('Error during fetch:', error);
     })
     .finally(() => {
-      // Schedule the next fetch after a delay (e.g., 1 second)
-      setTimeout(event_adsb, 1000);
+      // Schedule the next fetch after a delay (2 seconds —
+      // ADS-B position data from tar1090 updates every ~1-2 s per
+      // aircraft, so 2 s polling is sufficient and halves the
+      // pressure on the API proxy rate limiter.)
+      setTimeout(event_adsb, 2000);
     });
 }
 
