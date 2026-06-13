@@ -58,6 +58,68 @@ var mapLoaded = false;
 // global feature store – each entry is a GeoJSON Feature representing a plotted point
 var pointFeatures = [];
 
+// Altitude unit preference — persisted in localStorage.  'm' (metres) or 'ft' (feet).
+// getAltitudeColor() ALWAYS receives metres internally; this only affects display labels
+// and the legend bar text.
+var altUnit = (function() {
+  try { return localStorage.getItem('3lips_altUnit') || 'm'; } catch(e) { return 'm'; }
+})();
+
+/**
+ * @brief Formats an altitude value (in metres) for display according to current altUnit.
+ * @param {number} alt_m - Altitude in metres.
+ * @returns {string} e.g. "10500m" or "34449ft"
+ */
+function formatAltitude(alt_m) {
+  if (altUnit === 'ft') {
+    return Math.round(alt_m * 3.28084) + 'ft';
+  }
+  return Math.round(alt_m) + 'm';
+}
+
+/**
+ * @brief Updates the legend bar labels to reflect the current altitude unit.
+ */
+function updateLegendLabels() {
+  var labelsEl = document.getElementById('legend-labels');
+  if (!labelsEl) return;
+  var breakpoints_m = [0, 150, 300, 600, 1200, 1800, 2400, 3000, 6000, 9000, 12000];
+  var html = '';
+  for (var i = 0; i < breakpoints_m.length; i++) {
+    if (altUnit === 'ft') {
+      html += '<span>' + Math.round(breakpoints_m[i] * 3.28084) + 'ft</span>';
+    } else {
+      html += '<span>' + breakpoints_m[i] + 'm</span>';
+    }
+  }
+  labelsEl.innerHTML = html;
+}
+
+/**
+ * @brief Toggles altitude unit between metres and feet, updates labels and legend.
+ */
+function toggleAltitudeUnit() {
+  altUnit = (altUnit === 'm') ? 'ft' : 'm';
+  try { localStorage.setItem('3lips_altUnit', altUnit); } catch(e) {}
+  updateLegendLabels();
+  // Re-flush all label features to force text-field re-evaluation
+  _rebuildAllLabels();
+  // Update settings popup button text
+  var btn = document.getElementById('btn-alt-unit');
+  if (btn) btn.textContent = 'Unit: ' + (altUnit === 'm' ? 'metres' : 'feet');
+  var popup = document.getElementById('settings-popup');
+  if (popup) popup.style.display = 'none';
+}
+
+/**
+ * @brief Toggles the settings popup visibility.
+ */
+function toggleSettingsPopup() {
+  var popup = document.getElementById('settings-popup');
+  if (!popup) return;
+  popup.style.display = (popup.style.display === 'block') ? 'none' : 'block';
+}
+
 // global vars used by event handlers
 var adsb_url;
 
@@ -188,6 +250,18 @@ function _flushTargetLabels() {
   source.setData({ type: 'FeatureCollection', features: features });
 }
 
+/**
+ * @brief Rebuilds all label feature text without changing their positions.
+ * Used after switching altitude units so labels reflect the new unit.
+ */
+function _rebuildAllLabels() {
+  // ADS-B labels are rebuilt on the next event_adsb() poll.
+  // Detection labels are rebuilt on the next event_radar() poll.
+  // Just flush whatever we have now — the unit change will be picked up
+  // when the poll loops re-generate their label text.
+  _flushTargetLabels();
+}
+
 map.on('load', function () {
 
   mapLoaded = true;
@@ -258,6 +332,8 @@ map.on('load', function () {
   });
 
   // symbol layer for target labels (ADS-B and detection)
+  // Uses a dark semi-transparent halo for a subtle background pill effect
+  // and white text so it's readable against any map tile layer.
   map.addLayer({
     id: 'target-labels-text',
     type: 'symbol',
@@ -266,13 +342,13 @@ map.on('load', function () {
       'text-field':  ['get', 'label'],
       'text-font':   ['Open Sans Regular', 'Arial Unicode MS Regular'],
       'text-size':   11,
-      'text-offset': [0, -1.8],
+      'text-offset': [0, -1.1],
       'text-anchor': 'bottom',
     },
     paint: {
-      'text-color':        ['get', 'color'],
-      'text-halo-color':   '#ffffff',
-      'text-halo-width':   1.5,
+      'text-color':        '#ffffff',
+      'text-halo-color':   'rgba(0, 0, 0, 0.55)',
+      'text-halo-width':   3.5,
     },
   });
 

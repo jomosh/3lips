@@ -30,25 +30,27 @@ function event_radar() {
           var target = data["detections_localised"][key];
           var points = target["points"];
 
-          // Determine altitude: use barometric altitude from truth if available,
-          // otherwise fall back to the geometric altitude from the first localised point.
-          var alt = null;
+          // Determine altitude in METRES for colour coding:
+          //   - truth alt_baro is from ADS-B (feet) → convert to metres
+          //   - localised point altitude is geometric (already metres)
+          var alt_m = null;
           var flight = null;
           if (truth[hex]) {
             if (truth[hex].alt_baro !== undefined && truth[hex].alt_baro !== null) {
-              alt = truth[hex].alt_baro;
+              // ADS-B barometric altitude is in feet — convert to metres
+              alt_m = truth[hex].alt_baro * 0.3048;
             }
             flight = truth[hex].flight || null;
           }
-          // Fallback to geometric altitude if truth altitude unavailable
-          if ((alt === null || alt === undefined) && points.length > 0) {
-            alt = points[0][2];
+          // Fallback to geometric altitude from the first localised point (already metres)
+          if ((alt_m === null || alt_m === undefined) && points.length > 0) {
+            alt_m = points[0][2];
           }
-          if (alt === null || alt === undefined) {
-            alt = 0;
+          if (alt_m === null || alt_m === undefined) {
+            alt_m = 0;
           }
 
-          var color = getAltitudeColor(alt);
+          var color = getAltitudeColor(alt_m);
 
           for (var i = 0; i < points.length; i++) {
             addPoint(
@@ -63,15 +65,15 @@ function event_radar() {
             );
           }
 
-          // Build label text: "CALLSIGN · ALTm" or "HEX · ALTm" if no callsign
-          var labelText;
+          // Build label text: callsign on top line, formatted altitude on second line
+          var namePart;
           if (flight && flight.trim() !== '') {
-            labelText = flight.trim() + ' · ' + Math.round(alt) + 'm';
+            namePart = flight.trim();
           } else {
             // Use short hex (last 4 chars) for cleaner display
-            var shortHex = hex.length > 4 ? hex.substring(hex.length - 4) : hex;
-            labelText = shortHex + ' · ' + Math.round(alt) + 'm';
+            namePart = hex.length > 4 ? hex.substring(hex.length - 4) : hex;
           }
+          var labelText = namePart + '\n' + formatAltitude(alt_m);
 
           // Place label on the latest point (last in the array)
           var latestPt = points[points.length - 1];

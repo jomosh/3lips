@@ -53,21 +53,24 @@ function processAircraftData(aircraftData) {
   const flight = aircraftData.flight;
   const lat = aircraftData.lat;
   const lon = aircraftData.lon;
-  const alt = aircraftData.alt_baro;
+  const alt_baro_ft = aircraftData.alt_baro; // dump1090/tar1090 reports baro altitude in FEET
   const seen_pos = aircraftData.seen_pos;
 
   // Check if the aircraft has valid position data
-  if (lat !== undefined && lon !== undefined && alt !== undefined && seen_pos < 10) {
-    var color = getAltitudeColor(alt);
-    addPoint(lat, lon, alt, flight || hex, color, 10, "adsb", Date.now());
+  if (lat !== undefined && lon !== undefined && alt_baro_ft !== undefined && seen_pos < 10) {
+    // Convert feet → metres for internal colour mapping and display
+    var alt_m = alt_baro_ft * 0.3048;
+    var color = getAltitudeColor(alt_m);
+    addPoint(lat, lon, alt_m, flight || hex, color, 10, "adsb", Date.now());
 
-    // Build label text: "CALLSIGN · ALTm" or "· ALTm" if no callsign
-    var labelText;
+    // Build label text: callsign on top line, formatted altitude on second line
+    var namePart;
     if (flight && flight.trim() !== '') {
-      labelText = flight.trim() + ' · ' + Math.round(alt) + 'm';
+      namePart = flight.trim();
     } else {
-      labelText = hex + ' · ' + Math.round(alt) + 'm';
+      namePart = hex;
     }
+    var labelText = namePart + '\n' + formatAltitude(alt_m);
     updateTargetLabel("adsb", hex, lat, lon, labelText, color);
   }
 }

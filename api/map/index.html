@@ -51,6 +51,59 @@
         border-color: #3a80c9;
       }
 
+      /* Settings cog button */
+      #settings-cog {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 3;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.6);
+        color: #fff;
+        border: none;
+        font-size: 18px;
+        line-height: 32px;
+        text-align: center;
+        cursor: pointer;
+        padding: 0;
+      }
+      #settings-cog:hover {
+        background: rgba(0, 0, 0, 0.8);
+      }
+
+      /* Settings popup */
+      #settings-popup {
+        display: none;
+        position: absolute;
+        top: 48px;
+        left: 10px;
+        z-index: 3;
+        background: rgba(0, 0, 0, 0.75);
+        color: #fff;
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-family: sans-serif;
+        font-size: 13px;
+        min-width: 140px;
+      }
+      #settings-popup button {
+        display: block;
+        width: 100%;
+        margin-top: 6px;
+        padding: 6px 10px;
+        cursor: pointer;
+        border: 1px solid #666;
+        border-radius: 4px;
+        background: rgba(255,255,255,0.15);
+        color: #fff;
+        font-size: 13px;
+      }
+      #settings-popup button:hover {
+        background: rgba(255,255,255,0.3);
+      }
+
       /* Altitude legend bar — sits at bottom-centre of map */
       #altitude-legend {
         position: absolute;
@@ -102,6 +155,16 @@
   </head>
   <body>
     <div id="mapContainer"></div>
+
+    <!-- Settings cog -->
+    <button id="settings-cog" title="Settings" onclick="toggleSettingsPopup()">&#9881;</button>
+    <div id="settings-popup">
+      <strong>Altitude display</strong>
+      <button id="btn-alt-unit" onclick="toggleAltitudeUnit()">
+        <script>document.write('Unit: ' + (altUnit === 'm' ? 'metres' : 'feet'));</script>
+      </button>
+    </div>
+
     <div id="layer-switcher">
       <strong>Tiles</strong>
       <button id="btn-osm" class="active" onclick="switchTileLayer('osm')">OSM</button>
@@ -114,7 +177,7 @@
     <div id="altitude-legend">
       <div class="legend-title">ALTITUDE</div>
       <div class="legend-gradient"></div>
-      <div class="legend-labels">
+      <div class="legend-labels" id="legend-labels">
         <span>0m</span>
         <span>150m</span>
         <span>300m</span>
