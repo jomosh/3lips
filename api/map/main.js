@@ -66,6 +66,18 @@ var altUnit = (function() {
 })();
 
 /**
+ * @brief Strips HTML/XML special characters from a string to prevent
+ * injection when external data (e.g. flight callsigns) is used in
+ * MapLibre text-field expressions.
+ * @param {string} text - Raw input string.
+ * @returns {string} Sanitized string.
+ */
+function sanitizeLabel(text) {
+  if (typeof text !== 'string') return '';
+  return text.replace(/[<>&"']/g, '');
+}
+
+/**
  * @brief Formats an altitude value (in metres) for display according to current altUnit.
  * @param {number} alt_m - Altitude in metres.
  * @returns {string} e.g. "10500m" or "34449ft"
@@ -409,6 +421,10 @@ map.on('load', function () {
   } else {
     adsb_url = null;
   }
+
+  // initialise settings button text (replaces inline <script> in HTML)
+  var btnUnit = document.getElementById('btn-alt-unit');
+  if (btnUnit) btnUnit.textContent = 'Unit: ' + (altUnit === 'm' ? 'metres' : 'feet');
 
   // start polling event loops
   if (adsb_url) {

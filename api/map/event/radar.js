@@ -68,7 +68,7 @@ function event_radar() {
           // Build label text: callsign on top line, formatted altitude on second line
           var namePart;
           if (flight && flight.trim() !== '') {
-            namePart = flight.trim();
+            namePart = sanitizeLabel(flight.trim());
           } else {
             // Use short hex (last 4 chars) for cleaner display
             namePart = hex.length > 4 ? hex.substring(hex.length - 4) : hex;
