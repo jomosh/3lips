@@ -50,6 +50,54 @@
         color: white;
         border-color: #3a80c9;
       }
+
+      /* Altitude legend bar — sits at bottom-centre of map */
+      #altitude-legend {
+        position: absolute;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 2;
+        background: rgba(0, 0, 0, 0.65);
+        border-radius: 6px;
+        padding: 6px 10px 4px 10px;
+        font-family: sans-serif;
+        pointer-events: none;
+      }
+      #altitude-legend .legend-gradient {
+        width: 440px;
+        height: 16px;
+        border-radius: 3px;
+        background: linear-gradient(
+          to right,
+          hsl(30, 80%, 55%) 0%,       /* orange 0m */
+          hsl(30, 80%, 55%) 1.25%,     /* orange 0-150 */
+          hsl(35, 80%, 55%) 3.75%,     /* lighter orange 150-300 */
+          hsl(42, 80%, 55%) 7.5%,      /* orange-yellow 300-600 */
+          hsl(55, 80%, 55%) 15%,       /* yellow 600-1200 */
+          hsl(75, 80%, 55%) 25%,       /* yellow-green 1200-1800 */
+          hsl(95, 80%, 55%) 35%,       /* yellowish green 1800-2400 */
+          hsl(120, 80%, 55%) 45%,      /* green 2400-3000 */
+          hsl(195, 80%, 55%) 62.5%,    /* light blue 3000-6000 */
+          hsl(230, 80%, 55%) 80%,      /* blue 6000-9000 */
+          hsl(280, 80%, 55%) 100%      /* purple 9000-12000 */
+        );
+      }
+      #altitude-legend .legend-labels {
+        display: flex;
+        justify-content: space-between;
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 10px;
+        padding: 2px 1px 0 1px;
+        width: 440px;
+      }
+      #altitude-legend .legend-title {
+        color: rgba(255, 255, 255, 0.75);
+        font-size: 9px;
+        text-align: center;
+        margin-bottom: 2px;
+        letter-spacing: 0.5px;
+      }
     </style>
   </head>
   <body>
@@ -61,6 +109,26 @@
       <button id="btn-carto_dark" onclick="switchTileLayer('carto_dark')">Carto Dark</button>
       <button id="btn-opentopomap" onclick="switchTileLayer('opentopomap')">OpenTopoMap</button>
     </div>
+
+    <!-- Altitude colour legend bar -->
+    <div id="altitude-legend">
+      <div class="legend-title">ALTITUDE</div>
+      <div class="legend-gradient"></div>
+      <div class="legend-labels">
+        <span>0m</span>
+        <span>150m</span>
+        <span>300m</span>
+        <span>600m</span>
+        <span>1200m</span>
+        <span>1800m</span>
+        <span>2400m</span>
+        <span>3000m</span>
+        <span>6000m</span>
+        <span>9000m</span>
+        <span>12000m</span>
+      </div>
+    </div>
+
     <script src="lib/jquery-3.6.0.min.js"></script>
     <script src="event/adsb.js"></script>
     <script src="event/radar.js"></script>

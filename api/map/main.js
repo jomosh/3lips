@@ -80,6 +80,114 @@ var map = new maplibregl.Map({
   zoom: 9,
 });
 
+/**
+ * @brief Maps altitude in metres to a colour on the orange→yellow→green→blue→purple spectrum.
+ * @param {number} alt_m - Altitude in metres above WGS-84 ellipsoid.
+ * @returns {string} CSS hsla colour string (hsla(hue, 80%, 55%, alpha)).
+ */
+function getAltitudeColor(alt_m) {
+  // Clamp to defined range; below 0 → orange, above 12000 → purple
+  if (alt_m <= 0) return 'hsla(30, 80%, 55%, 0.85)';
+
+  // Piecewise-linear hue interpolation across altitude brackets
+  var stops = [
+    { alt: 0,     hue: 30  },  // orange
+    { alt: 150,   hue: 30  },  // orange
+    { alt: 300,   hue: 35  },  // lighter orange
+    { alt: 600,   hue: 42  },  // orange-yellow
+    { alt: 1200,  hue: 55  },  // yellow
+    { alt: 1800,  hue: 75  },  // yellow-green
+    { alt: 2400,  hue: 95  },  // yellowish green
+    { alt: 3000,  hue: 120 },  // green
+    { alt: 6000,  hue: 195 },  // light blue
+    { alt: 9000,  hue: 230 },  // blue
+    { alt: 12000, hue: 280 },  // purple
+  ];
+
+  // Above max → clamp to purple
+  if (alt_m >= 12000) return 'hsla(280, 80%, 55%, 0.85)';
+
+  // Find bracket
+  for (var i = 0; i < stops.length - 1; i++) {
+    if (alt_m >= stops[i].alt && alt_m <= stops[i + 1].alt) {
+      var t = (alt_m - stops[i].alt) / (stops[i + 1].alt - stops[i].alt);
+      var hue = stops[i].hue + t * (stops[i + 1].hue - stops[i].hue);
+      return 'hsla(' + hue.toFixed(1) + ', 80%, 55%, 0.85)';
+    }
+  }
+
+  return 'hsla(280, 80%, 55%, 0.85)'; // fallback purple
+}
+
+// Global registry of target label features from both ADS-B and detection sources.
+// Keyed by source+hex so each script can update its own entries independently.
+var _targetLabelFeatures = {};
+
+/**
+ * @brief Registers or updates a label feature for a target.
+ *
+ * Each caller passes a unique `sourceKey` (e.g. "adsb" or "detection") so that
+ * labels from different poll loops don't overwrite each other.
+ *
+ * @param {string} sourceKey  - Namespace key ("adsb" or "detection").
+ * @param {string} hex        - ICAO hex or target identifier.
+ * @param {number} lat        - Latitude in degrees.
+ * @param {number} lon        - Longitude in degrees.
+ * @param {string} label      - Display text (e.g. "BAW123 · 10500m").
+ * @param {string} color      - CSS colour string matching the dot colour.
+ */
+function updateTargetLabel(sourceKey, hex, lat, lon, label, color) {
+  var id = sourceKey + '_' + hex;
+  _targetLabelFeatures[id] = {
+    type: 'Feature',
+    id: id,
+    geometry: { type: 'Point', coordinates: [lon, lat] },
+    properties: { label: label, color: color },
+  };
+  _flushTargetLabels();
+}
+
+/**
+ * @brief Removes a label feature for a target.
+ * @param {string} sourceKey - Namespace key.
+ * @param {string} hex       - ICAO hex or target identifier.
+ */
+function removeTargetLabel(sourceKey, hex) {
+  var id = sourceKey + '_' + hex;
+  delete _targetLabelFeatures[id];
+  _flushTargetLabels();
+}
+
+/**
+ * @brief Removes all label features for a given source key.
+ * @param {string} sourceKey - Namespace key to clear.
+ */
+function clearTargetLabels(sourceKey) {
+  var prefix = sourceKey + '_';
+  for (var id in _targetLabelFeatures) {
+    if (_targetLabelFeatures.hasOwnProperty(id) && id.indexOf(prefix) === 0) {
+      delete _targetLabelFeatures[id];
+    }
+  }
+  _flushTargetLabels();
+}
+
+/**
+ * @brief Pushes current label features to the map source.
+ */
+function _flushTargetLabels() {
+  if (!mapLoaded) return;
+  var source = map.getSource('target-labels');
+  if (!source) return;
+  var features = [];
+  for (var id in _targetLabelFeatures) {
+    if (_targetLabelFeatures.hasOwnProperty(id)) {
+      features.push(_targetLabelFeatures[id]);
+    }
+  }
+  source.setData({ type: 'FeatureCollection', features: features });
+}
+
 map.on('load', function () {
 
   mapLoaded = true;
@@ -140,6 +248,31 @@ map.on('load', function () {
       'text-color':       '#000000',
       'text-halo-color':  '#ffffff',
       'text-halo-width':  2,
+    },
+  });
+
+  // GeoJSON source for target call sign + altitude labels
+  map.addSource('target-labels', {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  });
+
+  // symbol layer for target labels (ADS-B and detection)
+  map.addLayer({
+    id: 'target-labels-text',
+    type: 'symbol',
+    source: 'target-labels',
+    layout: {
+      'text-field':  ['get', 'label'],
+      'text-font':   ['Open Sans Regular', 'Arial Unicode MS Regular'],
+      'text-size':   11,
+      'text-offset': [0, -1.8],
+      'text-anchor': 'bottom',
+    },
+    paint: {
+      'text-color':        ['get', 'color'],
+      'text-halo-color':   '#ffffff',
+      'text-halo-width':   1.5,
     },
   });
 
