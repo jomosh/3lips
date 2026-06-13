@@ -149,11 +149,14 @@ def _check_rate_limit(client_ip: str) -> bool:
   now = time.time()
   window_start = now - _RATE_LIMIT_WINDOW
   with _rate_limit_lock:
-    # Prune old entries
-    _rate_limit_store[client_ip] = [
-      ts for ts in _rate_limit_store[client_ip] if ts > window_start
-    ]
-    if len(_rate_limit_store[client_ip]) >= _RATE_LIMIT_MAX:
+    # Prune old entries; delete the bucket if it becomes empty to avoid
+    # unbounded growth of the store over long uptimes.
+    pruned = [ts for ts in _rate_limit_store[client_ip] if ts > window_start]
+    if not pruned:
+      del _rate_limit_store[client_ip]
+    else:
+      _rate_limit_store[client_ip] = pruned
+    if len(_rate_limit_store.get(client_ip, [])) >= _RATE_LIMIT_MAX:
       return False
     _rate_limit_store[client_ip].append(now)
     return True
@@ -265,20 +268,23 @@ def _is_private_ip(ip: str) -> bool:
 # DNS resolution timeout (seconds) — override via DNS_TIMEOUT env var
 _DNS_TIMEOUT = float(os.environ.get('DNS_TIMEOUT', '3.0'))
 
+# Reusable thread-pool executor for DNS lookups — avoids per-call thread
+# creation/destruction overhead for the long-running Flask process.
+_dns_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
 def _resolve_with_timeout(hostname: str, port):
-  """Resolve hostname with a timeout using a thread-pool executor.
+  """Resolve hostname with a timeout using a reusable thread-pool executor.
 
   socket.getaddrinfo has no built-in timeout; a slow DNS server would
   block the calling thread indefinitely.  This wrapper offloads the
-  call to a single-worker thread pool and enforces a timeout, raising
-  socket.timeout if the resolution takes too long.
+  call to the module-level _dns_executor and enforces a timeout,
+  raising socket.timeout if the resolution takes too long.
   """
-  with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-    future = executor.submit(socket.getaddrinfo, hostname, port or None)
-    try:
-      return future.result(timeout=_DNS_TIMEOUT)
-    except concurrent.futures.TimeoutError:
-      raise socket.timeout(f"DNS resolution timed out after {_DNS_TIMEOUT}s")
+  future = _dns_executor.submit(socket.getaddrinfo, hostname, port or None)
+  try:
+    return future.result(timeout=_DNS_TIMEOUT)
+  except concurrent.futures.TimeoutError:
+    raise socket.timeout(f"DNS resolution timed out after {_DNS_TIMEOUT}s")
 
 
 def _resolve_and_classify(host: str) -> tuple[bool, str]:
@@ -401,7 +407,10 @@ def fetch_proxied_url(host: str, path: str,
       return response
     except requests.exceptions.RequestException as e:
       last_err = e
-      # Fall back only for connection-level errors (not HTTP error responses).
+      # Fall back only for connection-level HTTPS errors (e.g. TLS handshake
+      # failure, connection refused) — not for HTTP-level errors (4xx/5xx).
+      # hasattr check: if a response was received, the connection succeeded
+      # and the error is at the HTTP layer — no point retrying via HTTP.
       if scheme == 'https' and not getattr(e, 'response', None):
         continue
       break
