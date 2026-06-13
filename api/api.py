@@ -271,6 +271,11 @@ _DNS_TIMEOUT = float(os.environ.get('DNS_TIMEOUT', '3.0'))
 # creation/destruction overhead for the long-running Flask process.
 _dns_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
+# Reusable requests session for proxy HTTP connections — avoids per-call
+# TCP/TLS handshake overhead when repeatedly contacting the same upstream.
+_proxy_session = requests.Session()
+_proxy_session.headers.update({'User-Agent': '3lips-proxy/1.0'})
+
 def _resolve_with_timeout(hostname: str, port):
   """Resolve hostname with a timeout using a reusable thread-pool executor.
 
@@ -401,7 +406,7 @@ def fetch_proxied_url(host: str, path: str,
     try:
       url = f"{scheme}://{target_host}/{path}"
       headers = {'Host': original_hostname}
-      response = requests.get(url, timeout=_PROXY_TIMEOUT, headers=headers)
+      response = _proxy_session.get(url, timeout=_PROXY_TIMEOUT, headers=headers)
       response.raise_for_status()
       return response
     except requests.exceptions.RequestException as e:
