@@ -146,19 +146,18 @@ _rate_limit_lock = threading.Lock()
 
 def _check_rate_limit(client_ip: str) -> bool:
   """Return True if the client is *under* the rate limit (allowed to proceed)."""
-  now = time.time()
+  now = time.monotonic()
   window_start = now - _RATE_LIMIT_WINDOW
   with _rate_limit_lock:
     # Prune old entries; delete the bucket if it becomes empty to avoid
     # unbounded growth of the store over long uptimes.
-    pruned = [ts for ts in _rate_limit_store[client_ip] if ts > window_start]
-    if not pruned:
-      del _rate_limit_store[client_ip]
-    else:
-      _rate_limit_store[client_ip] = pruned
-    if len(_rate_limit_store.get(client_ip, [])) >= _RATE_LIMIT_MAX:
+    bucket = _rate_limit_store.get(client_ip, [])
+    bucket = [ts for ts in bucket if ts > window_start]
+    if len(bucket) >= _RATE_LIMIT_MAX:
+      _rate_limit_store[client_ip] = bucket
       return False
-    _rate_limit_store[client_ip].append(now)
+    bucket.append(now)
+    _rate_limit_store[client_ip] = bucket
     return True
 
 
