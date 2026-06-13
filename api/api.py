@@ -154,7 +154,10 @@ def _check_rate_limit(client_ip: str) -> bool:
     bucket = _rate_limit_store.get(client_ip, [])
     bucket = [ts for ts in bucket if ts > window_start]
     if len(bucket) >= _RATE_LIMIT_MAX:
-      _rate_limit_store[client_ip] = bucket
+      if bucket:
+        _rate_limit_store[client_ip] = bucket
+      else:
+        _rate_limit_store.pop(client_ip, None)
       return False
     bucket.append(now)
     _rate_limit_store[client_ip] = bucket
@@ -273,6 +276,9 @@ _dns_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
 # Reusable requests session for proxy HTTP connections — avoids per-call
 # TCP/TLS handshake overhead when repeatedly contacting the same upstream.
+# Uses requests.Session() default pool_connections=10, pool_maxsize=10
+# which is more than sufficient for this 2-endpoint proxy serving a single
+# radar visualisation frontend.
 _proxy_session = requests.Session()
 _proxy_session.headers.update({'User-Agent': '3lips-proxy/1.0'})
 
