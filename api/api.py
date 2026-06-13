@@ -14,6 +14,8 @@ import yaml
 import requests
 import socket
 import urllib.parse
+import threading
+import concurrent.futures
 from collections import defaultdict
 
 from common.Message import Message
@@ -134,27 +136,44 @@ def serve_map(file):
 def config():
   return config_data
 
-# ---------------------------------------------------------------------------
 # Simple in-memory rate limiter for proxy endpoints
 # ---------------------------------------------------------------------------
-# Window: 60 seconds, max 30 requests per window per client IP.
-# No extra dependencies required — uses a dict of timestamps per IP.
-_RATE_LIMIT_WINDOW = 60       # seconds
-_RATE_LIMIT_MAX = 30          # requests per window
+# Override defaults via environment: RATE_LIMIT_WINDOW=120 RATE_LIMIT_MAX=60
+_RATE_LIMIT_WINDOW = int(os.environ.get('RATE_LIMIT_WINDOW', '60'))
+_RATE_LIMIT_MAX = int(os.environ.get('RATE_LIMIT_MAX', '30'))
 _rate_limit_store: dict = defaultdict(list)
+_rate_limit_lock = threading.Lock()
 
 def _check_rate_limit(client_ip: str) -> bool:
-  """Return True if the client has exceeded the rate limit."""
+  """Return True if the client is *under* the rate limit (allowed to proceed)."""
   now = time.time()
   window_start = now - _RATE_LIMIT_WINDOW
-  # Prune old entries
-  _rate_limit_store[client_ip] = [
-    ts for ts in _rate_limit_store[client_ip] if ts > window_start
-  ]
-  if len(_rate_limit_store[client_ip]) >= _RATE_LIMIT_MAX:
-    return False
-  _rate_limit_store[client_ip].append(now)
-  return True
+  with _rate_limit_lock:
+    # Prune old entries
+    _rate_limit_store[client_ip] = [
+      ts for ts in _rate_limit_store[client_ip] if ts > window_start
+    ]
+    if len(_rate_limit_store[client_ip]) >= _RATE_LIMIT_MAX:
+      return False
+    _rate_limit_store[client_ip].append(now)
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Client IP detection with reverse-proxy awareness
+# ---------------------------------------------------------------------------
+# In the default Docker deployment there is no reverse proxy, so
+# request.remote_addr is correct.  Set TRUSTED_PROXY to the proxy's IP
+# (e.g. "172.20.0.1") to activate X-Forwarded-For support.
+_TRUSTED_PROXY = os.environ.get('TRUSTED_PROXY')
+
+def _get_client_ip() -> str:
+  """Return the originating client IP, respecting a trusted reverse proxy."""
+  if _TRUSTED_PROXY and request.remote_addr == _TRUSTED_PROXY:
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    if forwarded:
+      return forwarded.split(',')[0].strip()
+  return request.remote_addr or 'unknown'
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +212,10 @@ def _is_private_ip(ip: str) -> bool:
     True if the IP falls within any private, loopback, link-local,
     unique-local, or carrier-grade-NAT range.
   """
+  # Unspecified / "any" addresses — connecting would bind to all interfaces
+  if ip in ('0.0.0.0', '::'):
+    return True
+
   # Loopback
   if ip == '::1':
     return True
@@ -239,6 +262,25 @@ def _is_private_ip(ip: str) -> bool:
   return False
 
 
+# DNS resolution timeout (seconds) — override via DNS_TIMEOUT env var
+_DNS_TIMEOUT = float(os.environ.get('DNS_TIMEOUT', '3.0'))
+
+def _resolve_with_timeout(hostname: str, port):
+  """Resolve hostname with a timeout using a thread-pool executor.
+
+  socket.getaddrinfo has no built-in timeout; a slow DNS server would
+  block the calling thread indefinitely.  This wrapper offloads the
+  call to a single-worker thread pool and enforces a timeout, raising
+  socket.timeout if the resolution takes too long.
+  """
+  with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+    future = executor.submit(socket.getaddrinfo, hostname, port or None)
+    try:
+      return future.result(timeout=_DNS_TIMEOUT)
+    except concurrent.futures.TimeoutError:
+      raise socket.timeout(f"DNS resolution timed out after {_DNS_TIMEOUT}s")
+
+
 def _resolve_and_classify(host: str) -> tuple[bool, str]:
   """Resolve hostname to IPs and classify as private or public.
 
@@ -278,9 +320,9 @@ def _resolve_and_classify(host: str) -> tuple[bool, str]:
   if hostname.lower() in ('localhost', '::1', '127.0.0.1', '127.0.1.1'):
     return True, hostname
 
-  # Resolve hostname to IP addresses
+  # Resolve hostname to IP addresses (with timeout to avoid blocking)
   try:
-    addrinfo = socket.getaddrinfo(hostname, port or None)
+    addrinfo = _resolve_with_timeout(hostname, port)
     ips = [info[4][0] for info in addrinfo]
   except socket.gaierror as e:
     app.logger.error(f"DNS resolution failed for {hostname}: {str(e)}")
@@ -375,13 +417,51 @@ def _make_proxy_error(correlation_id: str, msg: str, status: int) -> tuple:
   return jsonify(error=msg, correlation_id=correlation_id), status
 
 
+def _handle_proxy_errors(correlation_id: str, endpoint: str,
+                         url: str, fetch_func, **fetch_kwargs):
+  """Shared error handling for proxy endpoints.
+
+  Calls ``fetch_func(**fetch_kwargs)`` and returns a Flask response
+  tuple.  Catches DnsResolutionError, ValueError (non-JSON), and
+  RequestException with consistent logging and error messages.
+
+  Args:
+    correlation_id: Short UUID for log correlation.
+    endpoint: Human-readable endpoint label for log messages.
+    url: The upstream URL being proxied (for log messages).
+    fetch_func: Callable that returns a ``requests.Response``.
+    **fetch_kwargs: Passed to ``fetch_func``.
+
+  Returns:
+    A tuple ``(flask.Response, int)`` suitable for Flask route return.
+  """
+  try:
+    response = fetch_func(**fetch_kwargs)
+    return jsonify(response.json())
+  except DnsResolutionError as e:
+    app.logger.error(
+      f"[{correlation_id}] DNS error for {endpoint} {url}: {str(e)}")
+    return _make_proxy_error(correlation_id,
+                             "DNS temporarily unavailable", 502)
+  except ValueError as e:
+    app.logger.error(
+      f"[{correlation_id}] Proxy error: non-JSON response "
+      f"from {endpoint} {url}: {str(e)}")
+    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
+  except requests.exceptions.RequestException as e:
+    app.logger.error(
+      f"[{correlation_id}] Proxy error fetching {endpoint} "
+      f"from {url}: {str(e)}")
+    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
+
+
 @app.route('/api/proxy/config')
 def proxy_config():
   """Proxy radar /api/config endpoints to avoid direct browser-to-node requests."""
   correlation_id = str(uuid.uuid4())[:8]
 
   # Rate limiting
-  client_ip = request.remote_addr or 'unknown'
+  client_ip = _get_client_ip()
   if not _check_rate_limit(client_ip):
     app.logger.warning(f"[{correlation_id}] Rate limit exceeded for {client_ip}")
     return _make_proxy_error(correlation_id, "Too many requests", 429)
@@ -400,25 +480,10 @@ def proxy_config():
     app.logger.warning(f"[{correlation_id}] Unauthorized server: {server}")
     return _make_proxy_error(correlation_id, "Server not authorized", 403)
 
-  try:
-    response = fetch_proxied_url(server, 'api/config', preferred_scheme='http')
-    return jsonify(response.json())
-  except DnsResolutionError as e:
-    app.logger.error(
-      f"[{correlation_id}] DNS error for radar config "
-      f"from {server}: {str(e)}")
-    return _make_proxy_error(correlation_id,
-                             "DNS temporarily unavailable", 502)
-  except ValueError as e:
-    app.logger.error(
-      f"[{correlation_id}] Proxy error: non-JSON response "
-      f"from radar config {server}: {str(e)}")
-    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
-  except requests.exceptions.RequestException as e:
-    app.logger.error(
-      f"[{correlation_id}] Proxy error fetching radar config "
-      f"from {server}: {str(e)}")
-    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
+  return _handle_proxy_errors(
+    correlation_id, "radar config", server,
+    fetch_proxied_url, host=server, path='api/config',
+    preferred_scheme='http')
 
 
 @app.route('/api/proxy/adsb')
@@ -427,7 +492,7 @@ def proxy_adsb():
   correlation_id = str(uuid.uuid4())[:8]
 
   # Rate limiting
-  client_ip = request.remote_addr or 'unknown'
+  client_ip = _get_client_ip()
   if not _check_rate_limit(client_ip):
     app.logger.warning(f"[{correlation_id}] Rate limit exceeded for {client_ip}")
     return _make_proxy_error(correlation_id, "Too many requests", 429)
@@ -446,28 +511,12 @@ def proxy_adsb():
     app.logger.warning(f"[{correlation_id}] Unauthorized ADS-B server: {url}")
     return _make_proxy_error(correlation_id, "ADS-B server not authorized", 403)
 
-  try:
-    tar1090_https = config_data.get('map', {}).get('tar1090_https', False)
-    preferred = 'https' if tar1090_https else 'http'
-    response = fetch_proxied_url(url, 'data/aircraft.json',
-                                 preferred_scheme=preferred)
-    return jsonify(response.json())
-  except DnsResolutionError as e:
-    app.logger.error(
-      f"[{correlation_id}] DNS error for ADS-B "
-      f"from {url}: {str(e)}")
-    return _make_proxy_error(correlation_id,
-                             "DNS temporarily unavailable", 502)
-  except ValueError as e:
-    app.logger.error(
-      f"[{correlation_id}] Proxy error: non-JSON response "
-      f"from ADS-B {url}: {str(e)}")
-    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
-  except requests.exceptions.RequestException as e:
-    app.logger.error(
-      f"[{correlation_id}] Proxy error fetching ADS-B data "
-      f"from {url}: {str(e)}")
-    return _make_proxy_error(correlation_id, "Failed to proxy request", 502)
+  tar1090_https = config_data.get('map', {}).get('tar1090_https', False)
+  preferred = 'https' if tar1090_https else 'http'
+  return _handle_proxy_errors(
+    correlation_id, "ADS-B", url,
+    fetch_proxied_url, host=url, path='data/aircraft.json',
+    preferred_scheme=preferred)
 
 
 if __name__ == "__main__":

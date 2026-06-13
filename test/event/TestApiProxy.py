@@ -114,11 +114,11 @@ class TestIsPrivateIp(unittest.TestCase):
     self.assertTrue(_is_private_ip("169.254.0.0"))
     self.assertTrue(_is_private_ip("169.254.255.254"))
 
-  def test_0_0_0_0(self):
-    # 0.0.0.0 is not a private range — it's the "any" address.
-    # Connecting to 0.0.0.0 would bind to all interfaces, which is dangerous,
-    # but it's not a "private" IP in the RFC sense.
-    self.assertFalse(_is_private_ip("0.0.0.0"))
+  def test_0_0_0_0_and_unspecified(self):
+    # 0.0.0.0 and :: are "any" / unspecified addresses — blocked for safety,
+    # as connecting to them would bind to all local interfaces.
+    self.assertTrue(_is_private_ip("0.0.0.0"))
+    self.assertTrue(_is_private_ip("::"))
 
   def test_127_embedded(self):
     # Only IPs starting with "127." are loopback, not containing "127" elsewhere
