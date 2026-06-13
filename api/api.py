@@ -138,7 +138,7 @@ def config():
 
 # Simple in-memory rate limiter for proxy endpoints
 # ---------------------------------------------------------------------------
-# Override defaults via environment: RATE_LIMIT_WINDOW=120 RATE_LIMIT_MAX=240
+# Override defaults via environment: RATE_LIMIT_WINDOW=120 RATE_LIMIT_MAX=120
 _RATE_LIMIT_WINDOW = int(os.environ.get('RATE_LIMIT_WINDOW', '60'))
 _RATE_LIMIT_MAX = int(os.environ.get('RATE_LIMIT_MAX', '120'))
 _rate_limit_store: dict = defaultdict(list)

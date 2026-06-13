@@ -66,15 +66,17 @@ var altUnit = (function() {
 })();
 
 /**
- * @brief Strips HTML/XML special characters from a string to prevent
- * injection when external data (e.g. flight callsigns) is used in
- * MapLibre text-field expressions.
+ * @brief Strips HTML/XML special characters from external data and
+ * truncates to a safe display length for MapLibre text-field labels.
  * @param {string} text - Raw input string.
- * @returns {string} Sanitized string.
+ * @param {number} [maxLength=40] - Maximum allowed length.
+ * @returns {string} Sanitized, length-limited string.
  */
-function sanitizeLabel(text) {
+function sanitizeLabel(text, maxLength) {
   if (typeof text !== 'string') return '';
-  return text.replace(/[<>&"']/g, '');
+  if (maxLength === undefined) maxLength = 40;
+  var cleaned = text.replace(/[<>&"']/g, '');
+  return cleaned.substring(0, maxLength);
 }
 
 /**

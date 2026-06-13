@@ -63,6 +63,7 @@ function processAircraftData(aircraftData) {
   if (lat !== undefined && lon !== undefined && alt_baro_ft !== undefined && seen_pos < 10) {
     // Guard against non-numeric alt_baro (tar1090 can emit "ground" as a string)
     if (typeof alt_baro_ft !== 'number' || isNaN(alt_baro_ft)) {
+      console.warn('Non-numeric alt_baro for', hex, ':', alt_baro_ft);
       alt_baro_ft = 0;
     }
     // Convert feet → metres for internal colour mapping and display
