@@ -146,20 +146,14 @@ map.on('load', function () {
   // add radar site points (rx and tx) from each blah2 server
   const radar_names = new URLSearchParams(
     window.location.search).getAll('server');
-  var radar_config_url = radar_names.map(
-    url => `http://${url}/api/config`);
-  radar_config_url.forEach(function(url) {
-    if (!is_localhost(url)) {
-      radar_config_url = radar_config_url.map(
-        url => url.replace(/^http:/, 'https:'));
-    }
-  });
+  var radar_config_urls = radar_names.map(
+    name => window.location.origin + '/api/proxy/config?server=' + encodeURIComponent(name));
   var style_radar = {};
   style_radar.color = 'rgba(0, 0, 0, 1.0)';
   style_radar.pointSize = 10;
   style_radar.type = "radar";
   style_radar.timestamp = Date.now();
-  radar_config_url.forEach(url => {
+  radar_config_urls.forEach(url => {
     fetch(url)
       .then(response => {
         if (!response.ok) {
@@ -199,19 +193,18 @@ map.on('load', function () {
       });
   });
 
-  // resolve ADS-B truth URL
-  adsb_url = new URLSearchParams(
-    window.location.search).get('adsb').split('&');
-  adsb_url = adsb_url.map(
-    url => `http://${url}/data/aircraft.json`);
-  if (!is_localhost(adsb_url[0])) {
-    adsb_url = adsb_url.map(
-      url => url.replace(/^http:/, 'https:'));
+  // resolve ADS-B truth URL through our proxy to avoid direct client-to-node requests
+  var adsb_param = new URLSearchParams(window.location.search).get('adsb');
+  if (adsb_param && adsb_param.trim() !== '') {
+    adsb_url = window.location.origin + '/api/proxy/adsb?url=' + encodeURIComponent(adsb_param);
+  } else {
+    adsb_url = null;
   }
-  adsb_url = adsb_url[0];
 
   // start polling event loops
-  event_adsb();
+  if (adsb_url) {
+    event_adsb();
+  }
   event_radar();
   event_ellipsoid();
 
