@@ -300,6 +300,10 @@ async def callback_message_received(msg):
   return output
 
 # init messaging
+# Bind to 0.0.0.0 so the listener accepts connections from the Docker
+# internal network (where the api container connects via 'event:6969').
+# Port 6969 is not published to the host in docker-compose.yml, so
+# external access is blocked by the Docker network layer.
 message_api_request = Message('0.0.0.0', 6969)
 message_api_request.set_callback_message_received(callback_message_received)
 

@@ -23,11 +23,12 @@ import os
 _api_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'api'))
 _api_path = os.path.join(_api_dir, 'api.py')
 
-_api_source = {}
+_api_source = {'__name__': '__test__', '__file__': _api_path}
 with open(_api_path, 'r') as f:
-    exec(f.read(), {'__name__': '__test__', '__file__': _api_path}, _api_source)
+    exec(f.read(), _api_source)
 
 _is_private_ip = _api_source['_is_private_ip']
+DnsResolutionError = _api_source.get('DnsResolutionError', Exception)
 
 
 class TestIsPrivateIp(unittest.TestCase):
@@ -108,10 +109,10 @@ class TestIsPrivateIp(unittest.TestCase):
     self.assertFalse(_is_private_ip("not-an-ip"))
 
   def test_169_254_link_local(self):
-    # 169.254.0.0/16 is APIPA / link-local — not currently blocked.
-    # This test documents the current behaviour.  If this range should be
-    # blocked in the future, update _is_private_ip and this test.
-    self.assertFalse(_is_private_ip("169.254.1.1"))
+    # 169.254.0.0/16 is APIPA / link-local (RFC 3927) — now blocked.
+    self.assertTrue(_is_private_ip("169.254.1.1"))
+    self.assertTrue(_is_private_ip("169.254.0.0"))
+    self.assertTrue(_is_private_ip("169.254.255.254"))
 
   def test_0_0_0_0(self):
     # 0.0.0.0 is not a private range — it's the "any" address.
@@ -132,7 +133,7 @@ class TestResolveAndClassify(unittest.TestCase):
     # Import the function (requires Flask app context for logger)
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'api'))
     from api import _resolve_and_classify, app
-    cls._resolve_and_classify = _resolve_and_classify
+    cls._resolve_and_classify = staticmethod(_resolve_and_classify)
     cls.app = app
 
   def _classify(self, host):
@@ -191,6 +192,11 @@ class TestResolveAndClassify(unittest.TestCase):
   def test_ipv6_bracketed_with_port_is_private(self):
     is_private, target = self._classify("[::1]:8080")
     self.assertTrue(is_private)
+
+  def test_dns_error_imported(self):
+    """DnsResolutionError should be importable from api.py."""
+    self.assertTrue(issubclass(DnsResolutionError, Exception),
+                    "DnsResolutionError should be an Exception subclass")
 
 
 if __name__ == "__main__":

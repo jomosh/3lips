@@ -160,6 +160,12 @@ def _check_rate_limit(client_ip: str) -> bool:
 # ---------------------------------------------------------------------------
 # Private-IP detection and DNS-resolved proxying
 # ---------------------------------------------------------------------------
+# Custom exception for DNS resolution errors that should be surfaced to callers
+class DnsResolutionError(Exception):
+  """Raised when DNS resolution fails temporarily (not NXDOMAIN)."""
+  pass
+
+
 # DNS rebinding / TOCTOU mitigation strategy:
 #   1. Resolve the hostname to all its IPs via getaddrinfo.
 #   2. Classify each resolved IP as private or public.
@@ -188,7 +194,7 @@ def _is_private_ip(ip: str) -> bool:
     unique-local, or carrier-grade-NAT range.
   """
   # Loopback
-  if ip in ('127.0.0.1', '::1'):
+  if ip == '::1':
     return True
   if ip.startswith('127.'):
     return True
@@ -219,17 +225,21 @@ def _is_private_ip(ip: str) -> bool:
       except ValueError:
         pass
 
+  # Link-local / APIPA (RFC 3927: 169.254.0.0/16)
+  if ip.startswith('169.254.'):
+    return True
+
   # IPv6 unique local (RFC 4193: fc00::/7 → fc00–fdff)
   if ip.startswith('fc') or ip.startswith('fd'):
     return True
-  # IPv6 link-local (RFC 4291: fe80::/10)
-  if ip.startswith('fe80:'):
+  # IPv6 link-local (RFC 4291: fe80::/10 → fe80:0000 to febf:ffff)
+  if ip[:3] in ('fe8', 'fe9', 'fea', 'feb'):
     return True
 
   return False
 
 
-def _resolve_and_classify(host: str) -> tuple:
+def _resolve_and_classify(host: str) -> tuple[bool, str]:
   """Resolve hostname to IPs and classify as private or public.
 
   Performs DNS resolution once and returns the *resolved IP address*
@@ -245,15 +255,24 @@ def _resolve_and_classify(host: str) -> tuple:
   Returns:
     (is_private, target) tuple where ``target`` is the resolved IP
     address formatted for use in a URL (bracketed if IPv6, with port
-    appended if one was supplied).  If DNS resolution fails, returns
-    ``(True, hostname)`` — a fail-closed posture.
+    appended if one was supplied).  If DNS resolution fails permanently
+    (NXDOMAIN), returns ``(True, hostname)`` — a fail-closed posture.
+
+  Raises:
+    DnsResolutionError: if DNS resolution fails transiently (timeout, SERVFAIL).
   """
   # Extract hostname and optional port using urllib.parse
   if '://' not in host:
     host = '//' + host
   parsed = urllib.parse.urlparse(host)
   hostname = parsed.hostname if parsed.hostname else host
-  port = parsed.port
+  try:
+    port = parsed.port
+  except ValueError:
+    # urlparse can mis-parse bare IPv6 addresses (e.g. "://::1"
+    # where ":1" is treated as a port).  Fall back to manual split.
+    hostname = hostname or host
+    port = None
 
   # Quick return for localhost / loopback
   if hostname.lower() in ('localhost', '::1', '127.0.0.1', '127.0.1.1'):
@@ -265,7 +284,12 @@ def _resolve_and_classify(host: str) -> tuple:
     ips = [info[4][0] for info in addrinfo]
   except socket.gaierror as e:
     app.logger.error(f"DNS resolution failed for {hostname}: {str(e)}")
-    return True, hostname  # Treat unresolvable hosts as private (fail closed)
+    # Distinguish permanent NXDOMAIN (safe fail-closed) from transient errors
+    errno = getattr(e, 'errno', None)
+    if errno == socket.EAI_NONAME:
+      return True, hostname  # NXDOMAIN — safe to block
+    raise DnsResolutionError(
+      f"DNS temporarily unavailable for {hostname}: {str(e)}") from e
 
   if not ips:
     app.logger.error(f"DNS returned no addresses for {hostname}")
@@ -294,7 +318,7 @@ def _resolve_and_classify(host: str) -> tuple:
 
 
 def fetch_proxied_url(host: str, path: str,
-                      preferred_scheme: str = 'http') -> requests.Response:
+                      preferred_scheme: str = 'http') -> 'requests.Response':
   """Perform a secure, server-side HTTP/HTTPS request.
 
   All outgoing proxy traffic goes through this single function.
@@ -379,6 +403,12 @@ def proxy_config():
   try:
     response = fetch_proxied_url(server, 'api/config', preferred_scheme='http')
     return jsonify(response.json())
+  except DnsResolutionError as e:
+    app.logger.error(
+      f"[{correlation_id}] DNS error for radar config "
+      f"from {server}: {str(e)}")
+    return _make_proxy_error(correlation_id,
+                             "DNS temporarily unavailable", 502)
   except ValueError as e:
     app.logger.error(
       f"[{correlation_id}] Proxy error: non-JSON response "
@@ -422,6 +452,12 @@ def proxy_adsb():
     response = fetch_proxied_url(url, 'data/aircraft.json',
                                  preferred_scheme=preferred)
     return jsonify(response.json())
+  except DnsResolutionError as e:
+    app.logger.error(
+      f"[{correlation_id}] DNS error for ADS-B "
+      f"from {url}: {str(e)}")
+    return _make_proxy_error(correlation_id,
+                             "DNS temporarily unavailable", 502)
   except ValueError as e:
     app.logger.error(
       f"[{correlation_id}] Proxy error: non-JSON response "
