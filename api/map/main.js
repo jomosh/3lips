@@ -100,7 +100,7 @@ function formatAltitude(alt_m) {
 function updateLegendLabels() {
   var labelsEl = document.getElementById('legend-labels');
   if (!labelsEl) return;
-  var breakpoints_m = [0, 150, 300, 600, 1200, 1800, 2400, 3000, 6000, 9000, 12000];
+  var breakpoints_m = [0, 300, 600, 1200, 1800, 2400, 3000, 6000, 9000, 12000];
   var html = '';
   for (var i = 0; i < breakpoints_m.length; i++) {
     var pct = (breakpoints_m[i] / 12000) * 100;
