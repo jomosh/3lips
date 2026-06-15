@@ -22,16 +22,25 @@ function event_ellipsoid() {
       var ellipsoidCount = Object.keys(data["ellipsoids"]).length;
       var threshold = (typeof window.minRadarEllipsoids !== 'undefined')
         ? window.minRadarEllipsoids : 3;
+      // Read user-configured fade time (0 = immediate removal)
+      var fadeSec = (typeof window.ellipsoidFadeTime !== 'undefined')
+        ? window.ellipsoidFadeTime : 0;
+
       if (ellipsoidCount < threshold) {
-        removeEntitiesByType("ellipsoids");
+        if (fadeSec > 0) {
+          removeEntitiesOlderThanAndFade("ellipsoids", fadeSec, 1.0);
+        } else {
+          removeEntitiesByType("ellipsoids");
+        }
         return;
       }
 
-      if (Object.keys(data["ellipsoids"]).length !== 0) {
+      // When ellipsoid data is present, age out old points instead of
+      // instantly deleting them — allows persistent ellipsoid trails.
+      if (fadeSec > 0) {
+        removeEntitiesOlderThanAndFade("ellipsoids", fadeSec, 1.0);
+      } else {
         removeEntitiesByType("ellipsoids");
-      }
-      else {
-        removeEntitiesOlderThanAndFade("ellipsoids", 10, 0.5);
       }
       for (const key in data["ellipsoids"]) {
         if (data["ellipsoids"].hasOwnProperty(key)) {

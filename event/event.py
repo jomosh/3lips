@@ -41,6 +41,7 @@ try:
   save = config['3lips']['save']
   tDelete = config['3lips']['tDelete']
   tar1090Https = config['map']['tar1090_https']
+  eventInterval = config.get('event', {}).get('interval', 1.0)
 except FileNotFoundError:
   print("Error: Configuration file not found.")
 except yaml.YAMLError as e:
@@ -245,7 +246,7 @@ async def main():
 
   while True:
     await event()
-    await asyncio.sleep(1)
+    await asyncio.sleep(eventInterval)
 
 def append_api_to_file(api_object, filename=saveFile):
 

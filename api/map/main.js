@@ -78,6 +78,17 @@ var minRadarEllipsoids = (function() {
 })();
 
 /**
+ * Number of seconds ellipsoid points persist and fade after their last update.
+ * 0 = immediate removal (current/default behaviour).
+ * Persisted in localStorage key '3lips_ellipsoidFadeTime'.
+ */
+var ellipsoidFadeTime = (function() {
+  try {
+    var v = parseInt(localStorage.getItem('3lips_ellipsoidFadeTime'), 10);
+    return (v >= 0) ? v : 0;
+  } catch(e) { return 0; }
+})();
+/**
  * @brief Strips HTML/XML special characters from external data and
  * truncates to a safe display length for MapLibre text-field labels.
  * @param {string} text - Raw input string.
@@ -169,6 +180,22 @@ function setMinRadarEllipsoids(val) {
   if (typeof event_ellipsoid === 'function') {
     event_ellipsoid();
   }
+}
+
+/**
+ * @brief Updates the ellipsoid fade time (seconds points persist after last update).
+ * Called from the settings popup number input's onchange handler.
+ * @param {string|number} val - The new fade duration (non-negative integer, 0 = off).
+ */
+function setEllipsoidFadeTime(val) {
+  var n = parseInt(val, 10);
+  if (isNaN(n) || n < 0) {
+    n = 0;
+  }
+  ellipsoidFadeTime = n;
+  try { localStorage.setItem('3lips_ellipsoidFadeTime', String(n)); } catch(e) {}
+  var inp = document.getElementById('input-ellipsoid-fade');
+  if (inp) inp.value = n;
 }
 
 // global vars used by event handlers

@@ -39,6 +39,9 @@ map:
   tar1090: "adsb.30hours.dev"
   tar1090_https: false
 
+event:
+  interval: 0.5  # seconds between backend polling cycles (was hardcoded 1.0)
+
 3lips:
   save: true
   tDelete: 60

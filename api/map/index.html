@@ -173,6 +173,12 @@
           style="display:block;width:100%;margin-top:4px;padding:4px 6px;border:1px solid #666;border-radius:4px;background:rgba(255,255,255,0.1);color:#fff;font-size:13px;box-sizing:border-box;"
           onchange="setMinRadarEllipsoids(this.value)">
       </div>
+      <div style="margin-top:12px;">
+        <strong>Ellipsoid fade time (s)</strong>
+        <input type="number" id="input-ellipsoid-fade" min="0" max="60" value="0"
+          style="display:block;width:100%;margin-top:4px;padding:4px 6px;border:1px solid #666;border-radius:4px;background:rgba(255,255,255,0.1);color:#fff;font-size:13px;box-sizing:border-box;"
+          onchange="setEllipsoidFadeTime(this.value)">
+      </div>
     </div>
 
     <div id="layer-switcher">
