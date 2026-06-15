@@ -16,6 +16,17 @@ function event_ellipsoid() {
         return;
       }
 
+      // Client-side filtering: only show ellipsoids when the number of
+      // radars with ellipsoid data meets or exceeds the user-configured
+      // threshold (default 3, stored in window.minRadarEllipsoids).
+      var ellipsoidCount = Object.keys(data["ellipsoids"]).length;
+      var threshold = (typeof window.minRadarEllipsoids !== 'undefined')
+        ? window.minRadarEllipsoids : 3;
+      if (ellipsoidCount < threshold) {
+        removeEntitiesByType("ellipsoids");
+        return;
+      }
+
       if (Object.keys(data["ellipsoids"]).length !== 0) {
         removeEntitiesByType("ellipsoids");
       }
@@ -53,8 +64,12 @@ function event_ellipsoid() {
 
 }
 
+// Ellipsoid style uses a bright magenta colour (hue 300°)
+// which is intentionally outside the altitude colour palette
+// (orange 30° → purple 280°) so ellipsoid points are never
+// confused with altitude-mapped detections.
 var style_ellipsoid = {};
-style_ellipsoid.color = 'rgba(0, 255, 255, 0.5)';
+style_ellipsoid.color = 'rgba(255, 0, 255, 0.45)';
 style_ellipsoid.pointSize = 16;
 style_ellipsoid.type = "ellipsoids";
 style_ellipsoid.timestamp = Date.now();

@@ -182,11 +182,11 @@ async def event():
     item["localisation"] == "ellipsoid-parametric-mean" or \
     item["localisation"] == "ellipse-parametric-min" or \
     item["localisation"] == "ellipsoid-parametric-min":
-      if associated_dets_2_radars:
+      if associated_dets:
         # get first target key
-        key = next(iter(associated_dets_2_radars))
+        key = next(iter(associated_dets))
         ellipsoid_radars = []
-        for radar in associated_dets_2_radars[key]:
+        for radar in associated_dets[key]:
           ellipsoid_radars.append(radar["radar"])
           x_tx, y_tx, z_tx = Geometry.lla2ecef(
             radar_dict_item[radar["radar"]]["config"]['location']['tx']['latitude'],

@@ -166,7 +166,13 @@
     <button id="settings-cog" title="Settings" onclick="toggleSettingsPopup()">&#9881;</button>
     <div id="settings-popup">
       <strong>Altitude display</strong>
-      <button id="btn-alt-unit" onclick="toggleAltitudeUnit()"></button>
+      <button id="btn-alt-unit" onclick="toggleAltitudeUnit()">Unit: metres</button>
+      <div style="margin-top:12px;">
+        <strong>Min radars for ellipsoids</strong>
+        <input type="number" id="input-min-radar-ellipsoids" min="1" max="10" value="3"
+          style="display:block;width:100%;margin-top:4px;padding:4px 6px;border:1px solid #666;border-radius:4px;background:rgba(255,255,255,0.1);color:#fff;font-size:13px;box-sizing:border-box;"
+          onchange="setMinRadarEllipsoids(this.value)">
+      </div>
     </div>
 
     <div id="layer-switcher">

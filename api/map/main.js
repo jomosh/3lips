@@ -66,6 +66,18 @@ var altUnit = (function() {
 })();
 
 /**
+ * Minimum number of radars required before ellipsoids are displayed on the map.
+ * Persisted in localStorage so the preference survives page reloads.
+ * Default = 3 (standard multi-static localisation).  Set to 1 to see single-radar ellipsoids.
+ */
+var minRadarEllipsoids = (function() {
+  try {
+    var v = parseInt(localStorage.getItem('3lips_minRadarEllipsoids'), 10);
+    return (v >= 1) ? v : 3;
+  } catch(e) { return 3; }
+})();
+
+/**
  * @brief Strips HTML/XML special characters from external data and
  * truncates to a safe display length for MapLibre text-field labels.
  * @param {string} text - Raw input string.
@@ -138,6 +150,30 @@ function toggleSettingsPopup() {
   var popup = document.getElementById('settings-popup');
   if (!popup) return;
   popup.style.display = (popup.style.display === 'block') ? 'none' : 'block';
+}
+
+/**
+ * @brief Updates the minimum radar count threshold for ellipsoid display.
+ * Called from the settings popup number input's onchange handler.
+ * @param {string|number} val - The new threshold value (positive integer).
+ */
+function setMinRadarEllipsoids(val) {
+  var n = parseInt(val, 10);
+  if (isNaN(n) || n < 1) {
+    n = 3;
+  }
+  minRadarEllipsoids = n;
+  try { localStorage.setItem('3lips_minRadarEllipsoids', String(n)); } catch(e) {}
+  // Sync the input field in case value was clamped
+  var inp = document.getElementById('input-min-radar-ellipsoids');
+  if (inp) inp.value = n;
+  // Hide the settings popup
+  var popup = document.getElementById('settings-popup');
+  if (popup) popup.style.display = 'none';
+  // Immediately re-apply the filter to current ellipsoids
+  if (typeof event_ellipsoid === 'function') {
+    event_ellipsoid();
+  }
 }
 
 // global vars used by event handlers
