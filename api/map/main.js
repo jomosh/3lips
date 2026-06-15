@@ -139,8 +139,6 @@ function toggleAltitudeUnit() {
   // Update settings popup button text
   var btn = document.getElementById('btn-alt-unit');
   if (btn) btn.textContent = 'Unit: ' + (altUnit === 'm' ? 'metres' : 'feet');
-  var popup = document.getElementById('settings-popup');
-  if (popup) popup.style.display = 'none';
 }
 
 /**
@@ -167,9 +165,6 @@ function setMinRadarEllipsoids(val) {
   // Sync the input field in case value was clamped
   var inp = document.getElementById('input-min-radar-ellipsoids');
   if (inp) inp.value = n;
-  // Hide the settings popup
-  var popup = document.getElementById('settings-popup');
-  if (popup) popup.style.display = 'none';
   // Immediately re-apply the filter to current ellipsoids
   if (typeof event_ellipsoid === 'function') {
     event_ellipsoid();
