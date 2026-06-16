@@ -492,6 +492,12 @@ map.on('load', function () {
   var btnUnit = document.getElementById('btn-alt-unit');
   if (btnUnit) btnUnit.textContent = 'Unit: ' + (altUnit === 'm' ? 'metres' : 'feet');
 
+  // Sync settings popup inputs to persisted localStorage values
+  var inpMin = document.getElementById('input-min-radar-ellipsoids');
+  if (inpMin) inpMin.value = minRadarEllipsoids;
+  var inpFade = document.getElementById('input-ellipsoid-fade');
+  if (inpFade) inpFade.value = ellipsoidFadeTime;
+
   // replace static legend labels with proportionally-positioned ones
   updateLegendLabels();
 
