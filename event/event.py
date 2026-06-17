@@ -191,6 +191,7 @@ async def event():
 
     # ---- Blind association + non-cooperative detection (F0+F1+C2+F3) -------
     detections_noncooperative = {}
+    blind_candidates = {}
     if noncoopEnabled:
       # Run GeometricAssociator to find blind candidates
       blind_candidates = geometricAssociator.process(
@@ -270,6 +271,46 @@ async def event():
               points[i] = ([round(lat, 3), round(lon, 3), alt])
             # Compound key so each target gets its own set of ellipsoid points
             ellipsoids[key + "-" + radar["radar"]] = points
+
+      # Also generate ellipsoids for blind (non-cooperative) targets
+      if blind_candidates:
+        for key in blind_candidates:
+          for radar in blind_candidates[key]:
+            # Only generate if radar config is available
+            if radar["radar"] not in radar_dict_item:
+              continue
+            if radar_dict_item[radar["radar"]] is None:
+              continue
+            cfg = radar_dict_item[radar["radar"]].get("config")
+            if cfg is None:
+              continue
+            x_tx, y_tx, z_tx = Geometry.lla2ecef(
+              cfg['location']['tx']['latitude'],
+              cfg['location']['tx']['longitude'],
+              cfg['location']['tx']['altitude']
+            )
+            x_rx, y_rx, z_rx = Geometry.lla2ecef(
+              cfg['location']['rx']['latitude'],
+              cfg['location']['rx']['longitude'],
+              cfg['location']['rx']['altitude']
+            )
+            ellipsoid = Ellipsoid(
+              [x_tx, y_tx, z_tx],
+              [x_rx, y_rx, z_rx],
+              radar["radar"]
+            )
+            points = localisation.sample(ellipsoid, radar["delay"]*1000, nDisplayEllipse)
+            for i in range(len(points)):
+              lat, lon, alt = Geometry.ecef2lla(points[i][0], points[i][1], points[i][2])
+              if item["localisation"] == "ellipsoid-parametric-mean" or \
+              item["localisation"] == "ellipsoid-parametric-min":
+                alt = round(alt)
+              if item["localisation"] == "ellipse-parametric-mean" or \
+              item["localisation"] == "ellipse-parametric-min":
+                alt = 0
+              points[i] = ([round(lat, 3), round(lon, 3), alt])
+            # Prefix "nc_" so blind-target ellipsoids don't collide with ADS-B keys
+            ellipsoids["nc_" + key + "-" + radar["radar"]] = points
 
     stop_time = time.time()
 
