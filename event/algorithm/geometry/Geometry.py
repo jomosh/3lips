@@ -75,8 +75,10 @@ class Geometry:
     N = a / math.sqrt(1 - e**2 * math.sin(lat)**2)
     alt = p / math.cos(lat) - N
     
-    # return lon in range [0, 2*pi)
+    # return lon in range [-pi, pi) for western hemisphere correctness
     lon = lon % (2 * math.pi)
+    if lon > math.pi:
+        lon -= 2 * math.pi
     
     # correct for numerical instability in altitude near exact poles:
     k = abs(x) < 1e-10 and abs(y) < 1e-10

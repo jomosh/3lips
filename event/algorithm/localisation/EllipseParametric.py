@@ -104,7 +104,7 @@ class EllipseParametric:
             average_point = Geometry.average_points(samples_intersect)
             samples_intersect = [average_point]
 
-        elif self.method == "minimum":
+        elif self.method == "min":
 
             min_distance = self.threshold
             min_point1 = None

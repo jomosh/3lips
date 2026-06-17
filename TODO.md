@@ -13,15 +13,15 @@ These are confirmed defects that silently produce wrong results today.
 - **Files**: `event/algorithm/localisation/EllipseParametric.py`, `EllipsoidParametric.py`
 - **Problem**: `event.py` creates instances with `method="min"` but `process()` checks `elif self.method == "minimum":`. All `min` variants silently fall through to the `else` branch and return an empty dict on every call. Both `ellipse-parametric-min` and `ellipsoid-parametric-min` are completely broken.
 - **Fix**: Change the `elif` check in both files from `"minimum"` to `"min"`, OR change the constructor call in `event.py` to pass `"minimum"`.
-- [ ] Fix string mismatch in `EllipseParametric.process()`
-- [ ] Fix string mismatch in `EllipsoidParametric.process()`
+- [x] Fix string mismatch in `EllipseParametric.process()`
+- [x] Fix string mismatch in `EllipsoidParametric.process()`
 - [ ] Add unit test: construct with `"min"` and verify non-empty output
 
 ### A2 — `ecef2lla` wraps longitude to `[0°, 360°)` instead of `[-180°, 180°)`
 - **File**: `event/algorithm/geometry/Geometry.py`
 - **Problem**: `lon = lon % (2 * math.pi)` maps all longitudes to `[0, 2π)`. The configured centre is London (`lon: -0.1278°`). Any target west of the prime meridian returns a longitude of ~359.87° instead of ~-0.13°. This breaks map display and accuracy comparison vs ADS-B truth for the entire western hemisphere.
 - **Fix**: Change wrapping to `lon = (lon + math.pi) % (2 * math.pi) - math.pi` to give `(-π, π]`.
-- [ ] Fix `ecef2lla` longitude wrapping
+- [x] Fix `ecef2lla` longitude wrapping
 - [ ] Update `TestGeometry.py` to add a western-hemisphere test case (e.g. London)
 - [ ] Verify map frontend correctly handles negative longitudes
 
