@@ -57,7 +57,8 @@ for radar in radar_data:
     servers.append({'name': radar['name'], 'url': radar['url']})
 
 associators = [
-  {"name": "ADSB Associator", "id": "adsb-associator"}
+  {"name": "ADSB Associator", "id": "adsb-associator"},
+  {"name": "Geometric Associator", "id": "geometric-associator"}
 ]
 
 localisations = [

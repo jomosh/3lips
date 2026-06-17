@@ -128,12 +128,12 @@ These are confirmed defects that silently produce wrong results today.
 - **State**: `[x, y, z, ẋ, ẏ, ż]` in ECEF
 - **Measurement**: bistatic range per radar (non-linear)
 - **Benefits**: Reduced position jitter, velocity readout, track continuity through short gaps.
-- [ ] Create `event/algorithm/tracker/EKFTracker.py`
-- [ ] Implement predict (constant-velocity) and update (bistatic range) steps
-- [ ] Implement track initiation (2-frame confirmation) and deletion
-- [ ] Thread-safe track store per API config item
+- [x] Create `event/algorithm/tracker/EKFTracker.py`
+- [x] Implement predict (constant-velocity) and update (bistatic range) steps
+- [x] Implement track initiation (2-frame confirmation) and deletion
+- [ ] Thread-safe track store per API config item (JIPDA handles this)
 - [ ] Add Doppler as secondary measurement (see C3)
-- [ ] Wire into event loop
+- [x] Wire into event loop
 - [ ] Add simulation-based unit tests
 
 ### C3 — Use Doppler measurements in localisation
@@ -250,9 +250,9 @@ These are confirmed defects that silently produce wrong results today.
 - **Problem**: The only associator requires external ADS-B truth via adsb2dd. Targets not broadcasting ADS-B (military aircraft, general aviation without transponder, drones) are completely invisible to the system.
 - **Key finding**: The ADS-B dependency is **entirely in the association layer**. Every localisation algorithm (`EllipseParametric`, `EllipsoidParametric`, `SphericalIntersection`) consumes `{id: [{radar, delay, doppler}]}` and is agnostic to how that dict was populated. A blind associator producing the same schema requires **zero changes** to any localisation code.
 - **Note**: Mentioned in README Future Work. See Phase F below for the full research-backed implementation plan.
-- [ ] Implement Phase F1 `GeometricAssociator` (see Phase F)
-- [ ] Add `associate.geometric` config block
-- [ ] Wire into `event.py` and `api.py` alongside existing `adsb-associator`
+- [x] Implement Phase F1 `GeometricAssociator` (see Phase F)
+- [x] Add `associate.geometric` config block
+- [x] Wire into `event.py` and `api.py` alongside existing `adsb-associator`
 
 ---
 
@@ -413,13 +413,13 @@ Both fields co-exist. `detections_localised` continues to hold ADS-B-associated 
 
 **Implementation plan:**
 
-1. [ ] Add `noncooperative` config block to `config/config.yml`
-2. [ ] In `event/event.py`: after `localised_dets = localisation.process(...)`, add a second block that runs `GeometricAssociator` + localisation if `noncooperative.enabled`
-3. [ ] Implement cross-reference logic: for each blind target, find nearest ADS-B target in ECEF; if distance > `match_distance`, flag as non-cooperative
-4. [ ] Extend API output schema: add `detections_noncooperative` and `cooperative_count` / `noncooperative_count`
-5. [ ] Add `noncooperative` field to the ZMQ message sent from `event` to `api`
-6. [ ] Update `api/api.py` to pass `detections_noncooperative` through to frontend
-7. [ ] Update `api/map/main.js` to render non-cooperative targets with distinct styling
+1. [x] Add `noncooperative` config block to `config/config.yml`
+2. [x] In `event/event.py`: after `localised_dets = localisation.process(...)`, add a second block that runs `GeometricAssociator` + localisation if `noncooperative.enabled`
+3. [x] Implement cross-reference logic: for each blind target, find nearest ADS-B target in ECEF; if distance > `match_distance`, flag as non-cooperative
+4. [x] Extend API output schema: add `detections_noncooperative` and `cooperative_count` / `noncooperative_count`
+5. [x] Add `noncooperative` field to the ZMQ message sent from `event` to `api`
+6. [x] Update `api/api.py` to pass `detections_noncooperative` through to frontend
+7. [x] Update `api/map/main.js` to render non-cooperative targets with distinct styling
 8. [ ] Add unit test: synthetic 3-radar epoch with 1 ADS-B target + 1 non-cooperative target → both detected and correctly classified
 9. [ ] Add unit test: `noncooperative.enabled: false` → no change to existing output
 10. [ ] Add unit test: `match_distance: 1` (very tight) → no false-positive classification drift
@@ -568,15 +568,15 @@ elif item["associator"] == "geometric-associator":
     associated_dets = geometricAssociator.process(radar_list, radar_data, timestamp)
 ```
 
-- [ ] Create `event/algorithm/associator/GeometricAssociator.py`
-- [ ] Implement N-tuple enumeration using `itertools.product`
-- [ ] Implement vectorised geometric intersection test (reuse `Ellipsoid` + `Geometry`)
-- [ ] Implement Doppler sign-consistency post-filter
+- [x] Create `event/algorithm/associator/GeometricAssociator.py`
+- [x] Implement N-tuple enumeration using `itertools.product`
+- [x] Implement vectorised geometric intersection test (reuse `Ellipsoid` + `Geometry`)
+- [x] Implement Doppler sign-consistency post-filter
 - [ ] Implement optional full Doppler ratio post-filter
-- [ ] Implement candidate deduplication
-- [ ] Add `associate.geometric` block to `config/config.yml`
-- [ ] Wire into `event/event.py` and `api/api.py`
-- [ ] Add `max_detections` guard to skip enumeration in high-clutter epochs
+- [x] Implement candidate deduplication
+- [x] Add `associate.geometric` block to `config/config.yml`
+- [x] Wire into `event/event.py` and `api/api.py`
+- [x] Add `max_detections` guard to skip enumeration in high-clutter epochs
 - [ ] Unit test: 3-radar synthetic geometry, 1 real target + 3 false detections per radar → exactly 1 output target
 - [ ] Unit test: empty detection lists → empty output `{}`
 - [ ] Unit test: output schema is identical to `AdsbAssociator` format
@@ -660,13 +660,13 @@ The joint measurement covariance is block-diagonal over radars (independent nois
 }
 ```
 
-- [ ] Create `event/algorithm/tracker/JPDATracker.py` implementing JIPDA (Musicki & Evans, 2004)
-- [ ] Implement bistatic range measurement model and Jacobian H_i for N radars
-- [ ] Implement track initiation (2-scan M/N confirmation from `GeometricAssociator` output)
-- [ ] Implement JIPDA predict/update cycle
-- [ ] Implement track deletion via `P_exist` threshold (configurable, default 0.1)
+- [x] Create `event/algorithm/tracker/JPDATracker.py` implementing JIPDA (Musicki & Evans, 2004)
+- [x] Implement bistatic range measurement model and Jacobian H_i for N radars
+- [x] Implement track initiation (2-scan M/N confirmation from `GeometricAssociator` output)
+- [x] Implement JIPDA predict/update cycle
+- [x] Implement track deletion via `P_exist` threshold (configurable, default 0.1)
 - [ ] Per-client thread-safe track store (avoid cross-contaminating independent API consumers)
-- [ ] Expose `P_exist`, velocity `[vx, vy, vz]`, `age_epochs` in output schema (optional fields — backward compatible)
+- [x] Expose `P_exist`, velocity `[vx, vy, vz]`, `age_epochs` in output schema (optional fields — backward compatible)
 - [ ] Unit test: 10-epoch simulated trajectory, verify track maintained through 2-epoch detection gap
 - [ ] Unit test: track terminated after 5 consecutive missed detections
 

@@ -16,11 +16,16 @@ import os
 import yaml
 from urllib.parse import unquote
 
+import numpy as np
+
 from algorithm.associator.AdsbAssociator import AdsbAssociator
+from algorithm.associator.GeometricAssociator import GeometricAssociator
 from algorithm.localisation.EllipseParametric import EllipseParametric
 from algorithm.localisation.EllipsoidParametric import EllipsoidParametric
 from algorithm.localisation.SphericalIntersection import SphericalIntersection
 from algorithm.truth.AdsbTruth import AdsbTruth
+from algorithm.tracker.EKFTracker import EKFTracker
+from algorithm.tracker.JIPDATracker import JIPDATracker
 from common.Message import Message
 from data.Ellipsoid import Ellipsoid
 from algorithm.geometry.Geometry import Geometry
@@ -42,6 +47,11 @@ try:
   tDelete = config['3lips']['tDelete']
   tar1090Https = config['map']['tar1090_https']
   eventInterval = config.get('event', {}).get('interval', 1.0)
+  geometricConfig = config.get('associate', {}).get('geometric', {})
+  ekfConfig = config.get('tracker', {}).get('ekf', {})
+  jipdaConfig = config.get('tracker', {}).get('jipda', {})
+  noncoopEnabled = config.get('noncooperative', {}).get('enabled', False)
+  noncoopMatchDist = config.get('noncooperative', {}).get('match_distance', 1000)
 except FileNotFoundError:
   print("Error: Configuration file not found.")
 except yaml.YAMLError as e:
@@ -61,6 +71,9 @@ ellipsoidParametricMean = EllipsoidParametric("mean", nSamplesEllipsoid, thresho
 ellipsoidParametricMin = EllipsoidParametric("min", nSamplesEllipsoid, thresholdEllipsoid)
 sphericalIntersection = SphericalIntersection()
 adsbTruth = AdsbTruth(tDeleteAdsb)
+geometricAssociator = GeometricAssociator(geometricConfig)
+ekf = EKFTracker(ekfConfig)
+jipda = JIPDATracker(ekf, jipdaConfig)
 saveFile = '/app/save/' + str(int(time.time())) + '.ndjson'
 
 async def event():
@@ -138,6 +151,8 @@ async def event():
     # associator selection
     if item["associator"] == "adsb-associator":
       associator = adsbAssociator
+    elif item["associator"] == "geometric-associator":
+      associator = adsbAssociator  # fallback — use blind path below
     else:
       print("Error: Associator invalid.")
       return
@@ -173,6 +188,48 @@ async def event():
       if isinstance(value, list) and len(value) >= 2
     }
     localised_dets = localisation.process(associated_dets_3_radars, radar_dict_item)
+
+    # ---- Blind association + non-cooperative detection (F0+F1+C2+F3) -------
+    detections_noncooperative = {}
+    if noncoopEnabled:
+      # Run GeometricAssociator to find blind candidates
+      blind_candidates = geometricAssociator.process(
+        item["server"], radar_dict_item, timestamp)
+
+      if blind_candidates:
+        # Run JIPDA tracker on blind candidates
+        tracked_blind = jipda.process(
+          blind_candidates, radar_dict_item, timestamp)
+
+        # Cross-reference: classify blind targets vs ADS-B targets
+        for track_id, track_data in tracked_blind.items():
+          # Skip tentative (unconfirmed) candidates
+          if track_data.get('P_exist', 0) < 0.3:
+            continue
+          pts = track_data.get('points', [])
+          if not pts:
+            continue
+          blind_ecef = Geometry.lla2ecef(pts[0][0], pts[0][1], pts[0][2])
+          blind_ecef_arr = np.array(blind_ecef)
+
+          # Find nearest ADS-B target
+          nearest_dist = float('inf')
+          for hex_key, loc_data in localised_dets.items():
+            adsb_pts = loc_data.get('points', [])
+            if not adsb_pts:
+              continue
+            adsb_ecef = Geometry.lla2ecef(
+              adsb_pts[0][0], adsb_pts[0][1], adsb_pts[0][2])
+            dist = np.linalg.norm(blind_ecef_arr - np.array(adsb_ecef))
+            if dist < nearest_dist:
+              nearest_dist = dist
+
+          # Non-cooperative if no ADS-B target within match_distance
+          if nearest_dist > noncoopMatchDist:
+            detections_noncooperative[track_id] = track_data
+
+    # ---- Output non-cooperative detections --------------------------------
+    item["detections_noncooperative"] = detections_noncooperative
 
     if associated_dets:
       print(associated_dets, flush=True)

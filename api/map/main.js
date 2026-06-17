@@ -88,6 +88,19 @@ var ellipsoidFadeTime = (function() {
     return (v >= 0) ? v : 0;
   } catch(e) { return 0; }
 })();
+
+/**
+ * Whether to display ADS-B (cooperative) targets on the map.  When false,
+ * only non-cooperative (blah2-only) targets are shown.
+ * Persisted in localStorage key '3lips_showAdsbTargets', default true.
+ */
+var showAdsbTargets = (function() {
+  try {
+    var v = localStorage.getItem('3lips_showAdsbTargets');
+    if (v === 'false') return false;
+    return true;
+  } catch(e) { return true; }
+})();
 /**
  * @brief Strips HTML/XML special characters from external data and
  * truncates to a safe display length for MapLibre text-field labels.
@@ -196,6 +209,23 @@ function setEllipsoidFadeTime(val) {
   try { localStorage.setItem('3lips_ellipsoidFadeTime', String(n)); } catch(e) {}
   var inp = document.getElementById('input-ellipsoid-fade');
   if (inp) inp.value = n;
+}
+
+/**
+ * @brief Toggles visibility of ADS-B (cooperative) targets on the map.
+ * Called from the settings popup checkbox onchange handler.
+ * @param {boolean} show - Whether to show ADS-B targets.
+ */
+function setShowAdsbTargets(show) {
+  showAdsbTargets = show;
+  try { localStorage.setItem('3lips_showAdsbTargets', String(show)); } catch(e) {}
+  // Sync checkbox
+  var cb = document.getElementById('input-show-adsb');
+  if (cb) cb.checked = show;
+  // Re-run radar poll to apply immediately
+  if (typeof event_radar === 'function') {
+    event_radar();
+  }
 }
 
 // global vars used by event handlers
@@ -497,6 +527,8 @@ map.on('load', function () {
   if (inpMin) inpMin.value = minRadarEllipsoids;
   var inpFade = document.getElementById('input-ellipsoid-fade');
   if (inpFade) inpFade.value = ellipsoidFadeTime;
+  var cbAdsb = document.getElementById('input-show-adsb');
+  if (cbAdsb) cbAdsb.checked = showAdsbTargets;
 
   // replace static legend labels with proportionally-positioned ones
   updateLegendLabels();

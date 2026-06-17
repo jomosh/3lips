@@ -11,6 +11,27 @@ associate:
     tDelete: 5
     adsb2dd: "adsb2dd.30hours.dev:49155"
     adsb2dd_https: false
+  geometric:
+    threshold: 500        # metres — spatial proximity for intersection test
+    nSamples: 50          # ellipse samples per detection
+    doppler_tolerance: 5  # Hz — Doppler sign-consistency filter
+    max_detections: 20    # per-radar guard; skip epoch above this
+
+tracker:
+  ekf:
+    process_noise_q: 1.0       # m²/s³ — continuous white noise acceleration
+    measurement_noise_r: 2500  # m² — bistatic range variance (~50m std)
+  jipda:
+    P_D: 0.9                   # probability of detection
+    P_G: 0.999                 # gate probability
+    gamma: 16.27               # chi² 3-DOF at P=0.999
+    P_exist_threshold: 0.1     # auto-delete tracks below this
+    confirmation_epochs: 2     # M/N = 2/2 for track initiation
+    max_tracks: 20
+
+noncooperative:
+  enabled: false               # set to true to detect non-ADS-B targets
+  match_distance: 1000         # metres — max distance to match blind↔ADS-B
 
 localisation:
   ellipse:
