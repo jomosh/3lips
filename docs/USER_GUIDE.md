@@ -127,6 +127,74 @@ localisation:
     threshold: 500   # Same meaning as ellipse threshold, in metres.
     nDisplay: 50     # Points sent to map for ellipsoid visualisation.
 
+# ─── Blind (ADS-B‑Free) Association ──────────────────────────────────────────
+# These settings only take effect when noncooperative.enabled is true (see below).
+associate:
+  geometric:
+    threshold: 500        # Metres — spatial proximity for intersection test.
+                          # Candidates whose sampled ellipse points don't all
+                          # mutually intersect within this distance are rejected.
+                          # Start at 500 and tune with your radar's range resolution.
+    nSamples: 50          # Ellipse sample points per detection. Lower than
+                          # localisation nSamples for speed (association samples
+                          # many candidate tuples). Increase for better ghost
+                          # rejection at the cost of CPU.
+    doppler_tolerance: 5  # Hz — Doppler sign-consistency filter. All radars in
+                          # a candidate tuple must observe the same Doppler sign
+                          # (all positive or all negative). Tolerance allows for
+                          # noise: set to 2× your CPI Doppler resolution.
+    max_detections: 20    # Per-radar guard. If any radar has more than this many
+                          # detections in one epoch, enumeration is skipped entirely
+                          # (clutter / interference spike protection).
+
+# ─── EKF Tracker ─────────────────────────────────────────────────────────────
+tracker:
+  ekf:
+    process_noise_q: 1.0       # m²/s³ — continuous white-noise acceleration.
+                               # Lower values = smoother tracks but slower response
+                               # to manoeuvring targets. 1.0 suits civil aviation.
+    measurement_noise_r: 2500  # m² — bistatic range variance. Default 2500 ≈
+                               # 50 m standard deviation, typical for FM-band PCL.
+                               # Reduce for DAB/DVB-T (higher bandwidth).
+
+# ─── JIPDA Multi‑Target Tracker ──────────────────────────────────────────────
+  jipda:
+    P_D: 0.9                   # Probability of detection — expected fraction of
+                               # epochs where a real target produces a detection.
+                               0.9 = 90 % (one missed detection every 10 epochs).
+    P_G: 0.999                 # Gate probability — fraction of true measurements
+                               # expected to fall inside the association gate.
+    gamma: 16.27               # Chi² gate threshold for 3 degrees of freedom at
+                               # P_G = 0.999. Increase to widen the gate (accept
+                               # noisier associations); decrease to tighten it.
+    P_exist_threshold: 0.1     # Tracks with existence probability below this are
+                               # automatically deleted. Lower = keep tracks longer
+                               # through gaps; higher = faster deletion of ghosts.
+    confirmation_epochs: 2     # Number of consecutive epochs a candidate must be
+                               # seen before a confirmed track is created (M/N = 2/2).
+    max_tracks: 20             # Hard cap on concurrent tracks. Prevents runaway
+                               # track creation in high-clutter environments.
+
+# ─── Non‑Cooperative Target Detection ────────────────────────────────────────
+noncooperative:
+  enabled: false               # Enable blind (ADS-B‑free) detection of targets
+                               # that do NOT broadcast ADS-B. When true, the
+                               # Geometric Associator + EKF + JIPDA pipeline runs
+                               # alongside the existing ADS-B path. Non-cooperative
+                               # targets appear on the map with a "blah2" label
+                               # and a yellow marker colour.
+  match_distance: 1000         # Metres — cross-reference threshold. A blind
+                               # target whose localised position is within this
+                               # distance of an ADS-B target is classified as
+                               # cooperative (same aircraft). Targets farther away
+                               # are flagged as non-cooperative.
+
+# ─── Event Loop ──────────────────────────────────────────────────────────────
+event:
+  interval: 0.5        # Seconds between backend polling cycles. Default 1.0.
+                        # Reduce to catch shorter‑lived detections (e.g. 0.5 for
+                        # 2 Hz polling). Doubles HTTP load on radar nodes.
+
 # ─── Map Display ─────────────────────────────────────────────────────────────
 map:
   location:
@@ -179,6 +247,21 @@ map:
 | `map.tar1090` | string | — | tar1090 ADS-B overlay server |
 | `3lips.save` | bool | — | Enable NDJSON save file |
 | `3lips.tDelete` | int | seconds | Idle API session expiry |
+| `associate.geometric.threshold` | int | metres | Blind association intersection distance |
+| `associate.geometric.nSamples` | int | — | Ellipse samples per detection for blind association |
+| `associate.geometric.doppler_tolerance` | int | Hz | Doppler sign-consistency filter range |
+| `associate.geometric.max_detections` | int | — | Per-radar clutter guard (skip epoch above this) |
+| `tracker.ekf.process_noise_q` | float | m²/s³ | Process noise for EKF constant-velocity model |
+| `tracker.ekf.measurement_noise_r` | float | m² | Bistatic range measurement variance |
+| `tracker.jipda.P_D` | float | — | Probability of detection (0.0–1.0) |
+| `tracker.jipda.P_G` | float | — | Gate probability (0.0–1.0) |
+| `tracker.jipda.gamma` | float | — | Chi² gate threshold (3-DOF) |
+| `tracker.jipda.P_exist_threshold` | float | — | Minimum existence probability for track deletion |
+| `tracker.jipda.confirmation_epochs` | int | epochs | Consecutive hits needed for track initiation |
+| `tracker.jipda.max_tracks` | int | — | Hard limit on concurrent tracks |
+| `noncooperative.enabled` | bool | — | Enable blind (ADS-B‑free) target detection |
+| `noncooperative.match_distance` | int | metres | Max distance to match blind target to ADS-B |
+| `event.interval` | float | seconds | Backend polling cycle interval |
 
 ---
 
@@ -215,19 +298,32 @@ docker compose logs -f api     # API request handling
 
 Open **http://localhost:49156** in a browser.
 
-### Controls
+### Main Controls
 | Control | Description |
 |---------|-------------|
 | **Radar servers** | Select which blah2 radar nodes to include (multi-select) |
-| **Associator** | Association method — currently only ADS-B Associator |
+| **Associator** | Association method — `adsb-associator` (uses ADS‑B truth) or `geometric-associator` (blind) |
 | **Localisation** | Which algorithm to use for position fixing (see below) |
 | **ADS-B** | Select the ADS-B truth server for association and map overlay |
 | **Submit** | Start (or update) the processing request |
 
+### Settings Popup (⚙️ Cog Icon, Top-Left)
+
+Click the gear icon in the top-left corner of the map to open the settings panel. The panel
+stays open until you click the gear again, allowing multiple adjustments without re-opening.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| **Altitude display** | Toggle button | metres | Switch altitude units between metres and feet. Updates all target labels and the colour legend bar. Preference is saved in your browser. |
+| **Min radars for ellipsoids** | Number (1–10) | 3 | How many unique radars must have ellipsoid data before the bistatic surfaces are drawn on the map. Set to **1** to see single-radar ellipsoids; set to **3** (default) to match the localisation requirement. |
+| **Ellipsoid fade time** | Seconds (0–60) | 0 | How long ellipsoid points stay on the map after their radar stops providing data. At **0** (default) points disappear immediately. Set to e.g. **5** to leave a fading trail that helps visualise historical detections. |
+| **Show ADS-B targets** | Checkbox | ☑ checked | Hide cooperative (ADS‑B‑associated) targets from the map. Useful when `noncooperative.enabled` is true — uncheck this to see *only* the yellow "blah2" non‑cooperative targets without ADS‑B clutter. |
+
 Results update once per second. The map shows:
-- **Coloured ellipses/ellipsoids**: the sampled bistatic surfaces for each radar (for parametric methods)
-- **Target markers**: localised positions
+- **Coloured ellipses/ellipsoids**: the sampled bistatic surfaces for each radar (magenta, per‑target hue)
+- **Target markers**: localised positions — altitude-coloured for ADS‑B targets, yellow for non‑cooperative ("blah2") targets
 - **ADS-B overlay**: truth positions from tar1090 for comparison
+- **Non-cooperative targets**: appear with a "blah2" label when `noncooperative.enabled` is true
 
 ---
 
@@ -287,6 +383,7 @@ GET /api?server=radar1.example.com&server=radar2.example.com&associator=adsb-ass
 | `truth` | object | ADS-B truth positions by aircraft hex code |
 | `detections_associated` | object | Associated detections by hex, per radar |
 | `detections_localised` | object | Localised positions `[lat, lon, alt]` per hex |
+| `detections_noncooperative` | object | (Optional) Non‑cooperative targets `[lat, lon, alt]` by track ID. Present only when `noncooperative.enabled` is true. |
 | `ellipsoids` | object | Sampled ellipsoid points per radar (for map display) |
 | `time` | float | Processing time in seconds for this epoch |
 
@@ -307,6 +404,7 @@ Returns the current `config.yml` as JSON. Useful for frontend initialisation.
 | `ellipsoid-parametric-mean` | Sample 3D ellipsoids, find mean intersection | ≥ 3 | Yes | Slow | Provides altitude estimate. CPU intensive with high nSamples. |
 | `ellipsoid-parametric-min` | Same, but report minimum-distance intersection point | ≥ 3 | Yes | Slow | Best 3D accuracy of parametric methods. |
 | `spherical-intersection` | Closed-form algebraic solution | ≥ 3 | Yes | Fast | **Requires all radars to share a common TX or common RX.** Will give wrong results for arbitrary geometries. Only works for Topology A (shared TX) currently; Topology B (shared RX) is a known bug. |
+| `geometric-associator` | Blind (ADS‑B‑free) association via geometric enumeration + Doppler filter + JIPDA tracking | ≥ 3 | Yes | Medium | Select as **Associator** (not Localisation). Removes ADS‑B dependency. Non‑cooperative targets shown with yellow "blah2" labels. Requires `noncooperative.enabled: true`. |
 
 ### Recommendations
 
@@ -471,7 +569,7 @@ If a radar node is unreachable (timeout or error), 3lips continues with the rema
 | Altitude (EllipsoidParametric) | ~500–2000m | Highly geometry dependent |
 
 ### Known Limitations
-1. **ADS-B dependency**: The current association requires ADS-B truth. Targets not broadcasting ADS-B (military, general aviation without transponder) are not localised.
+1. **ADS-B dependency (mitigated)**: By default, association requires ADS-B truth via adsb2dd. Targets not broadcasting ADS-B (military, general aviation without transponder) are invisible. Enable `noncooperative.enabled: true` in `config.yml` to activate the blind Geometric Associator + EKF + JIPDA pipeline. Non‑cooperative targets then appear on the map with a "blah2" label and yellow marker. Blind association requires ≥ 3 radars (ghost probability ≈ 6×10⁻⁶ per candidate at N=3).
 2. **Minimum 3 radars** for parametric methods. With only 2 radars, two ellipses intersect along a curve, not a point.
 3. **SphericalIntersection requires a shared node**: All radars must share the same transmitter (Topology A) or the same receiver (Topology B — currently a bug, TODO C6). Mixing independent TX/RX pairs (Topology C) gives wrong positions silently. See the [Deployment Topologies](#deployment-topologies) section for full details.
 4. **No temporal smoothing**: Each epoch produces an independent position fix. Track jitter is expected; a Kalman filter is planned (see `TODO.md`).
@@ -554,11 +652,12 @@ python3 -m unittest discover -s ../test/event/ -p "Test*.py" -v
 │   └── config.yml          # All runtime configuration
 ├── event/                  # Async event processing loop
 │   ├── event.py            # Main event loop (1 Hz)
-│   ├── algorithm/
-│   │   ├── associator/     # Detection association algorithms
-│   │   ├── geometry/       # WGS-84 coordinate transforms
-│   │   ├── localisation/   # Position fix algorithms
-│   │   └── truth/          # ADS-B truth fetching
+  │   ├── algorithm/
+  │   │   ├── associator/     # Detection association algorithms
+  │   │   ├── geometry/       # WGS-84 coordinate transforms
+  │   │   ├── localisation/   # Position fix algorithms
+  │   │   ├── tracker/        # EKF + JIPDA multi‑target tracking
+  │   │   └── truth/          # ADS-B truth fetching
 │   └── data/
 │       └── Ellipsoid.py    # Bistatic ellipsoid geometry
 ├── test/                   # Unit tests (run from event/ directory)
