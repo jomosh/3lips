@@ -15,9 +15,9 @@ function event_radar() {
       // ---- ADS-B (cooperative) targets -----------------------------------
       if (data["detections_localised"]) {
 
-        // Check whether ADS-B targets should be shown
-        var showAdsb = (typeof window.showAdsbTargets !== 'undefined')
-          ? window.showAdsbTargets : true;
+        // Check whether ADS-B targets should be localised
+        var localiseAdsb = (typeof window.localiseAdsbTargets !== 'undefined')
+          ? window.localiseAdsbTargets : true;
 
         removeEntitiesOlderThanAndFade("detection", 10, 0.5);
 
@@ -55,7 +55,7 @@ function event_radar() {
 
             var color = getAltitudeColor(alt_m);
 
-            if (showAdsb) {
+            if (localiseAdsb) {
               for (var i = 0; i < points.length; i++) {
                 addPoint(
                   points[i][0],
@@ -98,8 +98,8 @@ function event_radar() {
           }
         }
 
-        // If ADS-B targets are hidden, clear their on-screen points
-        if (!showAdsb) {
+        // If ADS-B targets are not localised, clear their on-screen points
+        if (!localiseAdsb) {
           removeEntitiesByType("detection");
         }
       }

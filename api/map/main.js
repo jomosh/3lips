@@ -90,13 +90,13 @@ var ellipsoidFadeTime = (function() {
 })();
 
 /**
- * Whether to display ADS-B (cooperative) targets on the map.  When false,
+ * Whether to localise ADS-B (cooperative) targets on the map.  When false,
  * only non-cooperative (blah2-only) targets are shown.
- * Persisted in localStorage key '3lips_showAdsbTargets', default true.
+ * Persisted in localStorage key '3lips_localiseAdsbTargets', default true.
  */
-var showAdsbTargets = (function() {
+var localiseAdsbTargets = (function() {
   try {
-    var v = localStorage.getItem('3lips_showAdsbTargets');
+    var v = localStorage.getItem('3lips_localiseAdsbTargets');
     if (v === 'false') return false;
     return true;
   } catch(e) { return true; }
@@ -212,16 +212,16 @@ function setEllipsoidFadeTime(val) {
 }
 
 /**
- * @brief Toggles visibility of ADS-B (cooperative) targets on the map.
+ * @brief Toggles localisation of ADS-B (cooperative) targets on the map.
  * Called from the settings popup checkbox onchange handler.
- * @param {boolean} show - Whether to show ADS-B targets.
+ * @param {boolean} localise - Whether to localise ADS-B targets.
  */
-function setShowAdsbTargets(show) {
-  showAdsbTargets = show;
-  try { localStorage.setItem('3lips_showAdsbTargets', String(show)); } catch(e) {}
+function setLocaliseAdsbTargets(localise) {
+  localiseAdsbTargets = localise;
+  try { localStorage.setItem('3lips_localiseAdsbTargets', String(localise)); } catch(e) {}
   // Sync checkbox
   var cb = document.getElementById('input-show-adsb');
-  if (cb) cb.checked = show;
+  if (cb) cb.checked = localise;
   // Re-run radar poll to apply immediately
   if (typeof event_radar === 'function') {
     event_radar();
@@ -528,7 +528,7 @@ map.on('load', function () {
   var inpFade = document.getElementById('input-ellipsoid-fade');
   if (inpFade) inpFade.value = ellipsoidFadeTime;
   var cbAdsb = document.getElementById('input-show-adsb');
-  if (cbAdsb) cbAdsb.checked = showAdsbTargets;
+  if (cbAdsb) cbAdsb.checked = localiseAdsbTargets;
 
   // replace static legend labels with proportionally-positioned ones
   updateLegendLabels();
