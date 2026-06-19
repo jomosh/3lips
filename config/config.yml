@@ -34,14 +34,14 @@ noncooperative:
   match_distance: 1000         # metres — max distance to match blind↔ADS-B
 
 localisation:
-  ellipse:
-    nSamples: 100
-    threshold: 500
-    nDisplay: 50
-  ellipsoid:
-    nSamples: 60
-    threshold: 500
-    nDisplay: 50
+  ellipse:                      # 2D (ground-level) parametric localisation
+    nSamples: 100               # azimuth samples around each ellipse
+    threshold: 500              # metres — max distance for intersection match
+    nDisplay: 50                # ellipsoid points rendered on the map
+  ellipsoid:                    # 3D parametric localisation
+    nSamples: 60                # azimuth samples (lower — more CPU per sample)
+    threshold: 500              # metres — max distance for intersection match
+    nDisplay: 50                # ellipsoid points rendered on the map
 
 map:
   location:
