@@ -499,54 +499,58 @@ map.on('load', function () {
   });
 
   // add radar site points (rx and tx) from each blah2 server
-  const radar_names = new URLSearchParams(
-    window.location.search).getAll('server');
-  var radar_config_urls = radar_names.map(
-    name => window.location.origin + '/api/proxy/config?server=' + encodeURIComponent(name));
-  var style_radar = {};
-  style_radar.color = 'rgba(0, 0, 0, 1.0)';
-  style_radar.pointSize = 10;
-  style_radar.type = "radar";
-  style_radar.timestamp = Date.now();
-  radar_config_urls.forEach(url => {
-    fetch(url)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Network response was not ok');
-        }
-        return response.json();
-      })
-      .then(data => {
-        // add radar rx and tx sites
-        if (!doesEntityNameExist(data.location.rx.name)) {
-          addPoint(
-            data.location.rx.latitude,
-            data.location.rx.longitude,
-            data.location.rx.altitude,
-            data.location.rx.name,
-            style_radar.color,
-            style_radar.pointSize,
-            style_radar.type,
-            style_radar.timestamp
-          );
-        }
-        if (!doesEntityNameExist(data.location.tx.name)) {
-          addPoint(
-            data.location.tx.latitude,
-            data.location.tx.longitude,
-            data.location.tx.altitude,
-            data.location.tx.name,
-            style_radar.color,
-            style_radar.pointSize,
-            style_radar.type,
-            style_radar.timestamp
-          );
-        }
-      })
-      .catch(error => {
-        console.error('Error during fetch:', error);
-      });
-  });
+  // Only when show_radar_sites is true in config (default); skip entirely when
+  // radar positions should not be publicly visible.
+  if (config && config.map && config.map.show_radar_sites !== false) {
+    const radar_names = new URLSearchParams(
+      window.location.search).getAll('server');
+    var radar_config_urls = radar_names.map(
+      name => window.location.origin + '/api/proxy/config?server=' + encodeURIComponent(name));
+    var style_radar = {};
+    style_radar.color = 'rgba(0, 0, 0, 1.0)';
+    style_radar.pointSize = 10;
+    style_radar.type = "radar";
+    style_radar.timestamp = Date.now();
+    radar_config_urls.forEach(url => {
+      fetch(url)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok');
+          }
+          return response.json();
+        })
+        .then(data => {
+          // add radar rx and tx sites
+          if (!doesEntityNameExist(data.location.rx.name)) {
+            addPoint(
+              data.location.rx.latitude,
+              data.location.rx.longitude,
+              data.location.rx.altitude,
+              data.location.rx.name,
+              style_radar.color,
+              style_radar.pointSize,
+              style_radar.type,
+              style_radar.timestamp
+            );
+          }
+          if (!doesEntityNameExist(data.location.tx.name)) {
+            addPoint(
+              data.location.tx.latitude,
+              data.location.tx.longitude,
+              data.location.tx.altitude,
+              data.location.tx.name,
+              style_radar.color,
+              style_radar.pointSize,
+              style_radar.type,
+              style_radar.timestamp
+            );
+          }
+        })
+        .catch(error => {
+          console.error('Error during fetch:', error);
+        });
+    });
+  }
 
   // resolve ADS-B truth URL through our proxy to avoid direct client-to-node requests
   var adsb_param = new URLSearchParams(window.location.search).get('adsb');

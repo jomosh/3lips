@@ -480,6 +480,12 @@ def proxy_config():
   """Proxy radar /api/config endpoints to avoid direct browser-to-node requests."""
   correlation_id = str(uuid.uuid4())[:8]
 
+  # Privacy gate: block when radar site locations are hidden
+  show_sites = config_data.get('map', {}).get('show_radar_sites', True)
+  if not show_sites:
+    return _make_proxy_error(correlation_id,
+                             "Radar site locations are not publicly available", 403)
+
   # Rate limiting
   client_ip = _get_client_ip()
   if not _check_rate_limit(client_ip):

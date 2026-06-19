@@ -49,6 +49,10 @@ map:
     longitude: -0.1278
   center_width: 50000
   center_height: 40000
+  # Set to false to hide radar TX/RX site locations on the map and from the
+  # public API.  When false, /api/proxy/config returns 403 and no site pins
+  # are drawn.  The event loop continues to use radar config internally.
+  show_radar_sites: true
   # Default tile servers point at public OSM/CARTO/OpenTopoMap endpoints.
   # These services have usage policies and rate limits; for production use
   # replace these values with your own tile proxy or self-hosted tile server.
