@@ -127,7 +127,7 @@ localisation:
     threshold: 500   # Same meaning as ellipse threshold, in metres.
     nDisplay: 50     # Points sent to map for ellipsoid visualisation.
 
-# ─── Blind (ADS-B‑Free) Association ──────────────────────────────────────────
+# ─── Blind (ADS‑B‑Free) Association ──────────────────────────────────────────
 # These settings only take effect when noncooperative.enabled is true (see below).
 associate:
   geometric:
@@ -181,7 +181,7 @@ noncooperative:
                                # that do NOT broadcast ADS-B. When true, the
                                # Geometric Associator + EKF + JIPDA pipeline runs
                                # alongside the existing ADS-B path. Non-cooperative
-                               # targets appear on the map with a "blah2" label
+                               # targets appear on the map with a "Non-coop" label
                                # and a yellow marker colour.
   match_distance: 1000         # Metres — cross-reference threshold. A blind
                                # target whose localised position is within this
@@ -317,13 +317,31 @@ stays open until you click the gear again, allowing multiple adjustments without
 | **Altitude display** | Toggle button | metres | Switch altitude units between metres and feet. Updates all target labels and the colour legend bar. Preference is saved in your browser. |
 | **Min radars for ellipsoids** | Number (1–10) | 3 | How many unique radars must have ellipsoid data before the bistatic surfaces are drawn on the map. Set to **1** to see single-radar ellipsoids; set to **3** (default) to match the localisation requirement. |
 | **Ellipsoid fade time** | Seconds (0–60) | 0 | How long ellipsoid points stay on the map after their radar stops providing data. At **0** (default) points disappear immediately. Set to e.g. **5** to leave a fading trail that helps visualise historical detections. |
-| **Show ADS-B targets** | Checkbox | ☑ checked | Hide cooperative (ADS‑B‑associated) targets from the map. Useful when `noncooperative.enabled` is true — uncheck this to see *only* the yellow "blah2" non‑cooperative targets without ADS‑B clutter. |
+| **Localise cooperative targets** | Checkbox | ☑ checked | When unchecked, hides cooperative (ADS‑B‑matched) ellipsoids/ellipses and detection dots/labels. **Non‑cooperative targets are always shown** regardless of this toggle — they are radar-only detections with no ADS‑B match. |
+| **Show cooperative targets** | Checkbox | ☑ checked | When unchecked, hides the raw ADS‑B truth overlay from tar1090 (aircraft positions, callsigns, and altitudes). Independent of localisation — you can show truth without localisation, or vice versa. |
 
 Results update once per second. The map shows:
-- **Coloured ellipses/ellipsoids**: the sampled bistatic surfaces for each radar (magenta, per‑target hue)
-- **Target markers**: localised positions — altitude-coloured for ADS‑B targets, yellow for non‑cooperative ("blah2") targets
-- **ADS-B overlay**: truth positions from tar1090 for comparison
-- **Non-cooperative targets**: appear with a "blah2" label when `noncooperative.enabled` is true
+- **Coloured ellipses/ellipsoids**: the sampled bistatic surfaces for each radar (magenta/rose, per‑target hue)
+- **Target markers**: localised positions — altitude-coloured for cooperative (ADS‑B‑matched) targets, yellow for non‑cooperative targets
+- **ADS-B overlay**: truth positions from tar1090 for comparison (when "Show cooperative targets" is checked)
+- **Non-cooperative targets**: appear with a "Non-coop" label and yellow marker when `noncooperative.enabled` is true. Their ellipsoids and detection dots are always visible regardless of the toggles above.
+
+### Non‑Cooperative Target Visibility
+
+Non‑cooperative targets are classified **server-side** in the event loop. The
+`noncooperative.match_distance` config value (default **1000 metres**) controls
+the threshold:
+
+1. The Geometric Associator finds blind candidates from radar detections alone.
+2. The JIPDA tracker estimates each candidate's ECEF position.
+3. For each blind target, the nearest ADS‑B aircraft position is found in ECEF space.
+4. If the distance is **greater than** `match_distance`, the target is classified as
+   **non‑cooperative** — it has no matching ADS‑B aircraft. Its ellipsoids receive
+   an `"nc_"` key prefix and it is always rendered on the map.
+
+Targets within `match_distance` of an ADS‑B aircraft are classified as
+**cooperative** (the same aircraft seen by both radar and ADS‑B). Their ellipsoids
+and detection dots are controlled by the "Localise cooperative targets" toggle.
 
 ---
 
@@ -369,7 +387,8 @@ GET /api?server=radar1.example.com&server=radar2.example.com&associator=adsb-ass
     "aabbcc": { "points": [[51.52, -0.48, 0]] }
   },
   "ellipsoids": {
-    "radar1.example.com": [[51.1, -0.8, 0], [51.2, -0.7, 0], "..."]
+    "aabbcc-radar1": [[51.1, -0.8, 0], [51.2, -0.7, 0], "..."],
+    "nc_T1-radar1": [[51.3, -0.9, 500], [51.4, -0.8, 500], "..."]
   },
   "time": 0.085
 }
@@ -384,7 +403,7 @@ GET /api?server=radar1.example.com&server=radar2.example.com&associator=adsb-ass
 | `detections_associated` | object | Associated detections by hex, per radar |
 | `detections_localised` | object | Localised positions `[lat, lon, alt]` per hex |
 | `detections_noncooperative` | object | (Optional) Non‑cooperative targets `[lat, lon, alt]` by track ID. Present only when `noncooperative.enabled` is true. |
-| `ellipsoids` | object | Sampled ellipsoid points per radar (for map display) |
+| `ellipsoids` | object | Sampled ellipsoid points per target+radar. Cooperative targets use keys of the form `"hex‑radarName"`. Non‑cooperative targets (present only when `noncooperative.enabled` is true) use keys prefixed `"nc_"`: `"nc_synthId‑radarName"`. |
 | `time` | float | Processing time in seconds for this epoch |
 
 ---
@@ -404,7 +423,6 @@ Returns the current `config.yml` as JSON. Useful for frontend initialisation.
 | `ellipsoid-parametric-mean` | Sample 3D ellipsoids, find mean intersection | ≥ 3 | Yes | Slow | Provides altitude estimate. CPU intensive with high nSamples. |
 | `ellipsoid-parametric-min` | Same, but report minimum-distance intersection point | ≥ 3 | Yes | Slow | Best 3D accuracy of parametric methods. |
 | `spherical-intersection` | Closed-form algebraic solution | ≥ 3 | Yes | Fast | **Requires all radars to share a common TX or common RX.** Will give wrong results for arbitrary geometries. Only works for Topology A (shared TX) currently; Topology B (shared RX) is a known bug. |
-| `geometric-associator` | Blind (ADS‑B‑free) association via geometric enumeration + Doppler filter + JIPDA tracking | ≥ 3 | Yes | Medium | Select as **Associator** (not Localisation). Removes ADS‑B dependency. Non‑cooperative targets shown with yellow "blah2" labels. Requires `noncooperative.enabled: true`. |
 
 ### Recommendations
 
@@ -569,7 +587,7 @@ If a radar node is unreachable (timeout or error), 3lips continues with the rema
 | Altitude (EllipsoidParametric) | ~500–2000m | Highly geometry dependent |
 
 ### Known Limitations
-1. **ADS-B dependency (mitigated)**: By default, association requires ADS-B truth via adsb2dd. Targets not broadcasting ADS-B (military, general aviation without transponder) are invisible. Enable `noncooperative.enabled: true` in `config.yml` to activate the blind Geometric Associator + EKF + JIPDA pipeline. Non‑cooperative targets then appear on the map with a "blah2" label and yellow marker. Blind association requires ≥ 3 radars (ghost probability ≈ 6×10⁻⁶ per candidate at N=3).
+1. **ADS-B dependency (mitigated)**: By default, association requires ADS-B truth via adsb2dd. Targets not broadcasting ADS-B (military, general aviation without transponder) are invisible. Enable `noncooperative.enabled: true` in `config.yml` to activate the blind Geometric Associator + EKF + JIPDA pipeline. Non‑cooperative targets then appear on the map with a "Non‑coop" label and yellow marker. Blind association requires ≥ 3 radars (ghost probability ≈ 6×10⁻⁶ per candidate at N=3).
 2. **Minimum 3 radars** for parametric methods. With only 2 radars, two ellipses intersect along a curve, not a point.
 3. **SphericalIntersection requires a shared node**: All radars must share the same transmitter (Topology A) or the same receiver (Topology B — currently a bug, TODO C6). Mixing independent TX/RX pairs (Topology C) gives wrong positions silently. See the [Deployment Topologies](#deployment-topologies) section for full details.
 4. **No temporal smoothing**: Each epoch produces an independent position fix. Track jitter is expected; a Kalman filter is planned (see `TODO.md`).
@@ -652,12 +670,12 @@ python3 -m unittest discover -s ../test/event/ -p "Test*.py" -v
 │   └── config.yml          # All runtime configuration
 ├── event/                  # Async event processing loop
 │   ├── event.py            # Main event loop (1 Hz)
-  │   ├── algorithm/
-  │   │   ├── associator/     # Detection association algorithms
-  │   │   ├── geometry/       # WGS-84 coordinate transforms
-  │   │   ├── localisation/   # Position fix algorithms
-  │   │   ├── tracker/        # EKF + JIPDA multi‑target tracking
-  │   │   └── truth/          # ADS-B truth fetching
+│   ├── algorithm/
+│   │   ├── associator/     # Detection association algorithms
+│   │   ├── geometry/       # WGS-84 coordinate transforms
+│   │   ├── localisation/   # Position fix algorithms
+│   │   ├── tracker/        # EKF + JIPDA multi‑target tracking
+│   │   └── truth/          # ADS-B truth fetching
 │   └── data/
 │       └── Ellipsoid.py    # Bistatic ellipsoid geometry
 ├── test/                   # Unit tests (run from event/ directory)
@@ -675,4 +693,3 @@ When `3lips.save: true`, each run creates a `.ndjson` file in `save/` named by U
 cd script
 pip install -r requirements.txt
 python plot_accuracy.py ../save/<timestamp>.ndjson
-```
