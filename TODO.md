@@ -29,20 +29,20 @@ These are confirmed defects that silently produce wrong results today.
 - **Files**: `EllipseParametric.py`, `EllipsoidParametric.py`
 - **Problem**: Both classes maintain a `self.ellipsoids = []` list and attempt a lookup on each call, but the newly created `Ellipsoid` is never appended. The cache is dead code — every frame re-constructs every `Ellipsoid` from scratch including redundant coordinate transforms.
 - **Fix**: After creating an `ellipsoid`, append it to `self.ellipsoids`.
-- [ ] Fix cache in `EllipseParametric.process()`
-- [ ] Fix cache in `EllipsoidParametric.process()`
+- [x] Fix cache in `EllipseParametric.process()`
+- [x] Fix cache in `EllipsoidParametric.process()`
 
 ### A4 — `AdsbAssociator` mutates shared radar detection data in-place
 - **File**: `event/algorithm/associator/AdsbAssociator.py`
 - **Problem**: `radar_detections['delay'][i] = delay` overwrites the shared `radar_dict` that is passed to all API items and all targets in the same epoch. If two API items reference the same radar, or if a radar has multiple targets, the second read gets already-extrapolated (possibly double-extrapolated) delays.
 - **Fix**: Deep-copy `radar_detections` at the start of `process_1_radar()` before applying extrapolation. Or work with a local copy of the delay list.
-- [ ] Add `import copy` and apply `copy.deepcopy` on the detections before mutation
+- [x] Add `import copy` and apply `copy.deepcopy` on the detections before mutation
 
 ### A5 — `EllipseParametric.sample()` uses hardcoded 100m altitude
 - **File**: `event/algorithm/localisation/EllipseParametric.py`
 - **Problem**: `Geometry.enu2ecef(r_1[i][0], r_1[i][1], 100, ...)` samples the 2D ellipse at 100m altitude. Display later forces altitude to 0. This introduces a small but systematic horizontal position error in the ECEF→distance comparisons.
 - **Fix**: Change `100` to `0` (or to the midpoint altitude of the ellipse for improved accuracy).
-- [ ] Fix hardcoded altitude in `EllipseParametric.sample()`
+- [x] Fix hardcoded altitude in `EllipseParametric.sample()`
 
 ---
 

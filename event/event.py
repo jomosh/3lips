@@ -76,6 +76,50 @@ ekf = EKFTracker(ekfConfig)
 jipda = JIPDATracker(ekf, jipdaConfig)
 saveFile = '/app/save/' + str(int(time.time())) + '.ndjson'
 
+def _sample_and_convert_ellipsoid(radar_config, radar_name, delay,
+                                   localisation, n_display):
+  """Sample an ellipsoid at the given bistatic delay and return
+  display-ready LLA points.
+
+  Shared by ADS-B and blind-target ellipsoid rendering so the
+  per-radar coordinate transforms and rounding logic are not
+  duplicated.
+
+  Args:
+      radar_config (dict): 'config' block from a radar in
+          radar_dict_item.
+      radar_name (str): Radar name for the Ellipsoid object.
+      delay (float): Bistatic delay in seconds.
+      localisation: Localisation instance (must have .sample()).
+      n_display (int): Number of display sample points.
+
+  Returns:
+      list: [[lat, lon, alt], ...] with lat/lon rounded to 3
+          decimal places and altitude rounded to integer metres.
+  """
+  from algorithm.geometry.Geometry import Geometry
+  from data.Ellipsoid import Ellipsoid
+
+  x_tx, y_tx, z_tx = Geometry.lla2ecef(
+    radar_config['location']['tx']['latitude'],
+    radar_config['location']['tx']['longitude'],
+    radar_config['location']['tx']['altitude'])
+  x_rx, y_rx, z_rx = Geometry.lla2ecef(
+    radar_config['location']['rx']['latitude'],
+    radar_config['location']['rx']['longitude'],
+    radar_config['location']['rx']['altitude'])
+  ellipsoid = Ellipsoid(
+    [x_tx, y_tx, z_tx],
+    [x_rx, y_rx, z_rx],
+    radar_name)
+  points = localisation.sample(ellipsoid, delay * 1000, n_display)
+  for i in range(len(points)):
+    lat, lon, alt = Geometry.ecef2lla(points[i][0], points[i][1], points[i][2])
+    alt = round(alt)
+    points[i] = ([round(lat, 3), round(lon, 3), alt])
+  return points
+
+
 async def event():
 
   print('Start event', flush=True)
@@ -244,31 +288,14 @@ async def event():
       if associated_dets:
         for key in associated_dets:
           for radar in associated_dets[key]:
-            x_tx, y_tx, z_tx = Geometry.lla2ecef(
-              radar_dict_item[radar["radar"]]["config"]['location']['tx']['latitude'],
-              radar_dict_item[radar["radar"]]["config"]['location']['tx']['longitude'],
-              radar_dict_item[radar["radar"]]["config"]['location']['tx']['altitude']
-            )
-            x_rx, y_rx, z_rx = Geometry.lla2ecef(
-              radar_dict_item[radar["radar"]]["config"]['location']['rx']['latitude'],
-              radar_dict_item[radar["radar"]]["config"]['location']['rx']['longitude'],
-              radar_dict_item[radar["radar"]]["config"]['location']['rx']['altitude']
-            )
-            ellipsoid = Ellipsoid(
-              [x_tx, y_tx, z_tx],
-              [x_rx, y_rx, z_rx],
-              radar["radar"]
-            )
-            points = localisation.sample(ellipsoid, radar["delay"]*1000, nDisplayEllipse)
-            for i in range(len(points)):
-              lat, lon, alt = Geometry.ecef2lla(points[i][0], points[i][1], points[i][2])
-              if item["localisation"] == "ellipsoid-parametric-mean" or \
-              item["localisation"] == "ellipsoid-parametric-min":
-                alt = round(alt)
-              if item["localisation"] == "ellipse-parametric-mean" or \
-              item["localisation"] == "ellipse-parametric-min":
-                alt = 0
-              points[i] = ([round(lat, 3), round(lon, 3), alt])
+            cfg = radar_dict_item[radar["radar"]]["config"]
+            points = _sample_and_convert_ellipsoid(
+              cfg, radar["radar"], radar["delay"],
+              localisation, nDisplayEllipse)
+            if item["localisation"] == "ellipse-parametric-mean" or \
+            item["localisation"] == "ellipse-parametric-min":
+              for pt in points:
+                pt[2] = 0
             # Compound key so each target gets its own set of ellipsoid points
             ellipsoids[key + "-" + radar["radar"]] = points
 
@@ -284,31 +311,13 @@ async def event():
             cfg = radar_dict_item[radar["radar"]].get("config")
             if cfg is None:
               continue
-            x_tx, y_tx, z_tx = Geometry.lla2ecef(
-              cfg['location']['tx']['latitude'],
-              cfg['location']['tx']['longitude'],
-              cfg['location']['tx']['altitude']
-            )
-            x_rx, y_rx, z_rx = Geometry.lla2ecef(
-              cfg['location']['rx']['latitude'],
-              cfg['location']['rx']['longitude'],
-              cfg['location']['rx']['altitude']
-            )
-            ellipsoid = Ellipsoid(
-              [x_tx, y_tx, z_tx],
-              [x_rx, y_rx, z_rx],
-              radar["radar"]
-            )
-            points = localisation.sample(ellipsoid, radar["delay"]*1000, nDisplayEllipse)
-            for i in range(len(points)):
-              lat, lon, alt = Geometry.ecef2lla(points[i][0], points[i][1], points[i][2])
-              if item["localisation"] == "ellipsoid-parametric-mean" or \
-              item["localisation"] == "ellipsoid-parametric-min":
-                alt = round(alt)
-              if item["localisation"] == "ellipse-parametric-mean" or \
-              item["localisation"] == "ellipse-parametric-min":
-                alt = 0
-              points[i] = ([round(lat, 3), round(lon, 3), alt])
+            points = _sample_and_convert_ellipsoid(
+              cfg, radar["radar"], radar["delay"],
+              localisation, nDisplayEllipse)
+            if item["localisation"] == "ellipse-parametric-mean" or \
+            item["localisation"] == "ellipse-parametric-min":
+              for pt in points:
+                pt[2] = 0
             # Prefix "nc_" so blind-target ellipsoids don't collide with ADS-B keys
             ellipsoids["nc_" + key + "-" + radar["radar"]] = points
 

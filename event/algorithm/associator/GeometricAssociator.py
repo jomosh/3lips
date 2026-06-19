@@ -84,8 +84,10 @@ class GeometricAssociator:
             return {}
 
         # ---- 2. Enumerate all cross-radar N-tuples ----------------------------
-        # Each tuple = ((delay_0, doppler_0), (delay_1, doppler_1), ...)
-        candidates = list(itertools.product(*detection_lists))
+        # Each entry is (d_idx, (delay, doppler)) so detection indices are
+        # carried through without an O(n) .index() lookup.
+        indexed_lists = [list(enumerate(dl)) for dl in detection_lists]
+        candidates = list(itertools.product(*indexed_lists))
 
         # ---- 3. Pre-compute ellipsoid & sample points for every detection ------
         # Key: (radar_idx, detection_idx) → ECEF point array (S, 3)
@@ -116,7 +118,8 @@ class GeometricAssociator:
             sample_arrays = []
             skip = False
             for r_idx in range(n_radars):
-                d_idx = detection_lists[r_idx].index(cand[r_idx])
+                # cand[r_idx] is (d_idx, (delay, doppler)) — no .index() needed
+                d_idx = cand[r_idx][0]
                 pts = sample_cache.get((r_idx, d_idx))
                 if pts is None or len(pts) == 0:
                     skip = True
@@ -158,7 +161,8 @@ class GeometricAssociator:
         # ---- 5. Doppler sign-consistency filter ---------------------------------
         filtered = []
         for cand, score in survivors:
-            dopplers = [c[1] for c in cand]
+            # cand[r_idx] is (d_idx, (delay, doppler))
+            dopplers = [c[1][1] for c in cand]
             # All Doppler values must have the same sign (all positive or all negative)
             signs = [1 if d > 0 else (-1 if d < 0 else 0) for d in dopplers]
             non_zero = [s for s in signs if s != 0]
@@ -177,29 +181,30 @@ class GeometricAssociator:
         for i, (cand_i, score_i) in enumerate(filtered):
             if i in assigned:
                 continue
-            delays_i = np.array([c[0] for c in cand_i])
+            delays_i = np.array([c[1][0] for c in cand_i])
             final_candidates.append(cand_i)
             assigned.add(i)
             # Suppress other candidates with very similar delays (same target)
             for j in range(i + 1, len(filtered)):
                 if j in assigned:
                     continue
-                delays_j = np.array([c[0] for c in filtered[j][0]])
+                delays_j = np.array([c[1][0] for c in filtered[j][0]])
                 delay_diff = np.linalg.norm(delays_i - delays_j)
                 if delay_diff < 1e-6:
                     assigned.add(j)
 
         # ---- 7. Build output dict ---------------------------------------------
         for cand in final_candidates:
-            delays_tuple = tuple(c[0] for c in cand)
+            # cand[r_idx] is (d_idx, (delay, doppler))
+            delays_tuple = tuple(c[1][0] for c in cand)
             synth_id = hashlib.sha256(
                 str(delays_tuple).encode()).hexdigest()[:8]
             output[synth_id] = []
             for r_idx in range(n_radars):
                 output[synth_id].append({
                     "radar": radar_names_valid[r_idx],
-                    "delay": cand[r_idx][0],
-                    "doppler": cand[r_idx][1]
+                    "delay": cand[r_idx][1][0],
+                    "doppler": cand[r_idx][1][1]
                 })
 
         return output

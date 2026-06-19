@@ -133,8 +133,8 @@ function event_radar() {
               );
             }
 
-            // Label: "blah2" instead of callsign
-            var labelText = 'blah2\n' + formatAltitude(ncoopAlt);
+            // Label: "Non-coop" instead of callsign
+            var labelText = 'Non-coop\n' + formatAltitude(ncoopAlt);
             var latestPt = pts[pts.length - 1];
             updateTargetLabel("noncoop", key, latestPt[0], latestPt[1], labelText, ncoopColor);
           }
