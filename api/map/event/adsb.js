@@ -27,6 +27,16 @@ function event_adsb() {
 // Function to update aircraft points
 function updateAircraftPoints(data) {
 
+  // Check whether cooperative (ADS-B) targets should be shown
+  var showCoop = (typeof window.showCooperativeTargets !== 'undefined')
+    ? window.showCooperativeTargets : true;
+
+  if (!showCoop) {
+    removeEntitiesByType("adsb");
+    clearTargetLabels("adsb");
+    return;
+  }
+
   removeEntitiesOlderThanAndFade("adsb", 60, 0.5);
 
   // Build a set of hex codes seen this poll so we can prune stale labels

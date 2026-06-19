@@ -90,13 +90,29 @@ var ellipsoidFadeTime = (function() {
 })();
 
 /**
- * Whether to localise ADS-B (cooperative) targets on the map.  When false,
- * only non-cooperative (blah2-only) targets are shown.
- * Persisted in localStorage key '3lips_localiseAdsbTargets', default true.
+ * Whether to show cooperative (ADS-B) targets from tar1090 on the map.
+ * When false, ADS-B truth dots and labels are hidden.
+ * Independent of localisation — this controls raw truth display only.
+ * Persisted in localStorage key '3lips_showCooperativeTargets', default true.
  */
-var localiseAdsbTargets = (function() {
+var showCooperativeTargets = (function() {
   try {
-    var v = localStorage.getItem('3lips_localiseAdsbTargets');
+    var v = localStorage.getItem('3lips_showCooperativeTargets');
+    if (v === 'false') return false;
+    return true;
+  } catch(e) { return true; }
+})();
+
+/**
+ * Whether to localise cooperative (ADS-B-associated) targets on the map.
+ * When false, cooperative ellipsoids and cooperative detection dots/labels
+ * are hidden.  Non-cooperative (blah2-only) localisation output is always
+ * shown regardless of this setting.
+ * Persisted in localStorage key '3lips_localiseCooperativeTargets', default true.
+ */
+var localiseCooperativeTargets = (function() {
+  try {
+    var v = localStorage.getItem('3lips_localiseCooperativeTargets');
     if (v === 'false') return false;
     return true;
   } catch(e) { return true; }
@@ -212,19 +228,41 @@ function setEllipsoidFadeTime(val) {
 }
 
 /**
- * @brief Toggles localisation of ADS-B (cooperative) targets on the map.
+ * @brief Toggles visibility of cooperative (ADS-B) targets from tar1090.
  * Called from the settings popup checkbox onchange handler.
- * @param {boolean} localise - Whether to localise ADS-B targets.
+ * @param {boolean} show - Whether to show ADS-B truth targets.
  */
-function setLocaliseAdsbTargets(localise) {
-  localiseAdsbTargets = localise;
-  try { localStorage.setItem('3lips_localiseAdsbTargets', String(localise)); } catch(e) {}
+function setShowCooperativeTargets(show) {
+  showCooperativeTargets = show;
+  try { localStorage.setItem('3lips_showCooperativeTargets', String(show)); } catch(e) {}
   // Sync checkbox
-  var cb = document.getElementById('input-show-adsb');
+  var cb = document.getElementById('input-show-cooperative');
+  if (cb) cb.checked = show;
+  // Re-run ADS-B poll to apply immediately
+  if (typeof event_adsb === 'function') {
+    event_adsb();
+  }
+}
+
+/**
+ * @brief Toggles localisation of cooperative (ADS-B-associated) targets.
+ * When disabled, cooperative ellipsoids and cooperative detection dots/labels
+ * are hidden; non-cooperative localisation remains visible.
+ * Called from the settings popup checkbox onchange handler.
+ * @param {boolean} localise - Whether to localise cooperative targets.
+ */
+function setLocaliseCooperativeTargets(localise) {
+  localiseCooperativeTargets = localise;
+  try { localStorage.setItem('3lips_localiseCooperativeTargets', String(localise)); } catch(e) {}
+  // Sync checkbox
+  var cb = document.getElementById('input-localise-cooperative');
   if (cb) cb.checked = localise;
-  // Re-run radar poll to apply immediately
+  // Re-run radar and ellipsoid polls to apply immediately
   if (typeof event_radar === 'function') {
     event_radar();
+  }
+  if (typeof event_ellipsoid === 'function') {
+    event_ellipsoid();
   }
 }
 
@@ -527,8 +565,10 @@ map.on('load', function () {
   if (inpMin) inpMin.value = minRadarEllipsoids;
   var inpFade = document.getElementById('input-ellipsoid-fade');
   if (inpFade) inpFade.value = ellipsoidFadeTime;
-  var cbAdsb = document.getElementById('input-show-adsb');
-  if (cbAdsb) cbAdsb.checked = localiseAdsbTargets;
+  var cbShowCoop = document.getElementById('input-show-cooperative');
+  if (cbShowCoop) cbShowCoop.checked = showCooperativeTargets;
+  var cbLocaliseCoop = document.getElementById('input-localise-cooperative');
+  if (cbLocaliseCoop) cbLocaliseCoop.checked = localiseCooperativeTargets;
 
   // replace static legend labels with proportionally-positioned ones
   updateLegendLabels();

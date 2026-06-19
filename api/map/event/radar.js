@@ -15,47 +15,47 @@ function event_radar() {
       // ---- ADS-B (cooperative) targets -----------------------------------
       if (data["detections_localised"]) {
 
-        // Check whether ADS-B targets should be localised
-        var localiseAdsb = (typeof window.localiseAdsbTargets !== 'undefined')
-          ? window.localiseAdsbTargets : true;
+        // Check whether cooperative targets should be localised
+        var localiseCoop = (typeof window.localiseCooperativeTargets !== 'undefined')
+          ? window.localiseCooperativeTargets : true;
 
-        removeEntitiesOlderThanAndFade("detection", 10, 0.5);
+        if (localiseCoop) {
+          removeEntitiesOlderThanAndFade("detection", 10, 0.5);
 
-        // Read truth data for flight/altitude lookup
-        var truth = data["truth"] || {};
+          // Read truth data for flight/altitude lookup
+          var truth = data["truth"] || {};
 
-        // Track which hexes were seen this poll for label pruning
-        var seenHex = {};
+          // Track which hexes were seen this poll for label pruning
+          var seenHex = {};
 
-        for (const key in data["detections_localised"]) {
-          if (data["detections_localised"].hasOwnProperty(key)) {
-            var hex = key;
-            var target = data["detections_localised"][key];
-            var points = target["points"];
+          for (const key in data["detections_localised"]) {
+            if (data["detections_localised"].hasOwnProperty(key)) {
+              var hex = key;
+              var target = data["detections_localised"][key];
+              var points = target["points"];
 
-            // Determine altitude in METRES for colour coding:
-            //   - truth alt_baro is from ADS-B (feet) → convert to metres
-            //   - localised point altitude is geometric (already metres)
-            var alt_m = null;
-            var flight = null;
-            if (truth[hex]) {
-              if (truth[hex].alt_baro !== undefined && truth[hex].alt_baro !== null) {
-                // ADS-B barometric altitude is in feet — convert to metres
-                alt_m = truth[hex].alt_baro * 0.3048;
+              // Determine altitude in METRES for colour coding:
+              //   - truth alt_baro is from ADS-B (feet) → convert to metres
+              //   - localised point altitude is geometric (already metres)
+              var alt_m = null;
+              var flight = null;
+              if (truth[hex]) {
+                if (truth[hex].alt_baro !== undefined && truth[hex].alt_baro !== null) {
+                  // ADS-B barometric altitude is in feet — convert to metres
+                  alt_m = truth[hex].alt_baro * 0.3048;
+                }
+                flight = truth[hex].flight || null;
               }
-              flight = truth[hex].flight || null;
-            }
-            // Fallback to geometric altitude from the first localised point (already metres)
-            if ((alt_m === null || alt_m === undefined) && points.length > 0) {
-              alt_m = points[0][2];
-            }
-            if (alt_m === null || alt_m === undefined) {
-              alt_m = 0;
-            }
+              // Fallback to geometric altitude from the first localised point (already metres)
+              if ((alt_m === null || alt_m === undefined) && points.length > 0) {
+                alt_m = points[0][2];
+              }
+              if (alt_m === null || alt_m === undefined) {
+                alt_m = 0;
+              }
 
-            var color = getAltitudeColor(alt_m);
+              var color = getAltitudeColor(alt_m);
 
-            if (localiseAdsb) {
               for (var i = 0; i < points.length; i++) {
                 addPoint(
                   points[i][0],
@@ -82,25 +82,25 @@ function event_radar() {
               // Place label on the latest point (last in the array)
               var latestPt = points[points.length - 1];
               updateTargetLabel("detection", hex, latestPt[0], latestPt[1], labelText, color);
-            }
 
-            seenHex[hex] = true;
-          }
-        }
-
-        // Remove labels for targets that are no longer localised
-        for (var id in _targetLabelFeatures) {
-          if (_targetLabelFeatures.hasOwnProperty(id) && id.indexOf('detection_') === 0) {
-            var storedHex = id.substring(11);
-            if (!seenHex[storedHex]) {
-              removeTargetLabel("detection", storedHex);
+              seenHex[hex] = true;
             }
           }
-        }
 
-        // If ADS-B targets are not localised, clear their on-screen points
-        if (!localiseAdsb) {
+          // Remove labels for targets that are no longer localised
+          for (var id in _targetLabelFeatures) {
+            if (_targetLabelFeatures.hasOwnProperty(id) && id.indexOf('detection_') === 0) {
+              var storedHex = id.substring(11);
+              if (!seenHex[storedHex]) {
+                removeTargetLabel("detection", storedHex);
+              }
+            }
+          }
+        } else {
+          // Cooperative localisation disabled — clear cooperative detection
+          // points and labels.  Non-cooperative targets are unaffected.
           removeEntitiesByType("detection");
+          clearTargetLabels("detection");
         }
       }
 
