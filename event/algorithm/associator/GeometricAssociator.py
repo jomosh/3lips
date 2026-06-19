@@ -45,7 +45,7 @@ class GeometricAssociator:
         self.threshold = config.get('threshold', 500)          # metres
         self.nSamples = config.get('nSamples', 50)             # ellipse samples
         self.doppler_tolerance = config.get('doppler_tolerance', 5)  # Hz
-        self.max_detections = config.get('max_detections', 20) # per-radar guard
+        self.max_detections = max(1, config.get('max_detections', 20)) # per-radar guard
 
     def process(self, radar_list: list, radar_data: dict,
                 timestamp: int) -> dict:

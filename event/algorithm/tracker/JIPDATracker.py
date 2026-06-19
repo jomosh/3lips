@@ -23,6 +23,7 @@ References:
 
 import math
 from scipy.stats import chi2
+from algorithm.geometry.Geometry import Geometry
 
 
 class JIPDATracker:
@@ -70,14 +71,13 @@ class JIPDATracker:
         """
         now = timestamp_ms
 
-        # Compute dt since last epoch per track (or use 1.0s default)
-        dt = 1.0
-
         # ---- 1. Predict all existing tracks -----------------------------------
         for track_id, track in self.tracks.items():
             if track['timestamp_ms'] > 0:
                 dt = (now - track['timestamp_ms']) / 1000.0
                 dt = max(0.1, min(dt, 5.0))  # clamp to sane range
+            else:
+                dt = 1.0  # new track — assume 1 s event-loop interval
             self.ekf.predict(track, dt)
             track['timestamp_ms'] = now
 
@@ -121,7 +121,6 @@ class JIPDATracker:
                     cfg['location']['rx']['altitude']
                 ]
                 # Convert to ECEF
-                from algorithm.geometry.Geometry import Geometry
                 tx = list(Geometry.lla2ecef(*tx_ecef))
                 rx = list(Geometry.lla2ecef(*rx_ecef))
                 # Bistatic range = delay (seconds) * speed of light
@@ -209,7 +208,6 @@ class JIPDATracker:
             det_list = blind_candidates[synth_id]
             pos_sum = [0.0, 0.0, 0.0]
             count = 0
-            from algorithm.geometry.Geometry import Geometry
             for det in det_list:
                 rn = det['radar']
                 if rn not in radar_data or radar_data[rn] is None:
@@ -273,6 +271,10 @@ class JIPDATracker:
             p for p in self._pending_tracks
             if (now - p['timestamp_ms']) / 1000.0 < (self.confirmation_epochs + 2)
         ]
+        # Hard cap to prevent unbounded growth in noisy environments
+        max_pending = max(50, self.max_tracks * 3)
+        if len(self._pending_tracks) > max_pending:
+            self._pending_tracks = self._pending_tracks[-max_pending:]
 
         # ---- 7. Prune tracks below P_exist threshold --------------------------
         to_delete = []
@@ -289,7 +291,6 @@ class JIPDATracker:
         for track_id, track in self.tracks.items():
             pos_ecef = self.ekf.get_position(track)
             vel_ecef = self.ekf.get_velocity(track)
-            from algorithm.geometry.Geometry import Geometry
             lat, lon, alt = Geometry.ecef2lla(pos_ecef[0], pos_ecef[1], pos_ecef[2])
             output[track_id] = {
                 'points': [[round(lat, 5), round(lon, 5), round(alt)]],
