@@ -58,7 +58,6 @@ for radar in radar_data:
 
 associators = [
   {"name": "ADSB Associator", "id": "adsb-associator"},
-  {"name": "Geometric Associator", "id": "geometric-associator"}
 ]
 
 localisations = [
@@ -78,6 +77,9 @@ adsbs = [
 valid = {}
 valid['servers'] = [item['url'] for item in servers]
 valid['associators'] = [item['id'] for item in associators]
+# The AdsbAssociator is always used as the primary associator in the event loop.
+# The Geometric Associator runs as a parallel blind path when
+# config noncooperative.enabled is true.
 valid['localisations'] = [item['id'] for item in localisations]
 valid['adsbs'] = [item['url'] for item in adsbs]
 
@@ -91,7 +93,7 @@ message_api_request = Message('event', 6969)
 @app.route("/")
 def index():
   return render_template("index.html", servers=servers, \
-  associators=associators, localisations=localisations, adsbs=adsbs)
+  localisations=localisations, adsbs=adsbs)
 
 # serve static files from the /app/public folder
 @app.route('/public/<path:file>')
@@ -105,13 +107,10 @@ def api():
   api = request.query_string.decode('utf-8')
   # input protection
   servers_api = request.args.getlist('server')
-  associators_api = request.args.getlist('associator')
   localisations_api = request.args.getlist('localisation')
   adsbs_api = request.args.getlist('adsb')
   if not all(item in valid['servers'] for item in servers_api):
     return 'Invalid server'
-  if not all(item in valid['associators'] for item in associators_api):
-    return 'Invalid associator'
   if not all(item in valid['localisations'] for item in localisations_api):
     return 'Invalid localisation'
   if not all(item in valid['adsbs'] for item in adsbs_api):

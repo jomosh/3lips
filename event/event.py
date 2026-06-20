@@ -192,14 +192,10 @@ async def event():
       if key in radar_dict
     }
 
-    # associator selection
-    if item["associator"] == "adsb-associator":
-      associator = adsbAssociator
-    elif item["associator"] == "geometric-associator":
-      associator = geometricAssociator
-    else:
-      print("Error: Associator invalid.")
-      return
+    # Primary associator is always AdsbAssociator (ADS‑B truth).
+    # GeometricAssociator runs as a parallel blind path when
+    # noncooperative.enabled is true (see below).
+    associator = adsbAssociator
 
     # localisation selection
     if item["localisation"] == "ellipse-parametric-mean":
@@ -234,6 +230,13 @@ async def event():
     localised_dets = localisation.process(associated_dets_3_radars, radar_dict_item)
 
     # ---- Blind association + non-cooperative detection (F0+F1+C2+F3) -------
+    # The Geometric Associator + JIPDA pipeline always runs alongside the
+    # primary AdsbAssociator when noncooperative.enabled is true.  It finds
+    # blind candidates from radar data alone, tracks them, and classifies
+    # each as cooperative (near an ADS‑B target) or non‑cooperative (no
+    # ADS‑B match).  Non‑cooperative targets get "nc_" prefixed keys in
+    # the ellipsoids output and are always visible on the map regardless
+    # of the "Localise cooperative targets" frontend toggle.
     detections_noncooperative = {}
     blind_candidates = {}
     if noncoopEnabled:

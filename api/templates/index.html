@@ -63,15 +63,6 @@
       </div>
 
       <div class="mb-3">
-        <label class="form-label fw-bold">Associator:</label>
-        <select class="form-select" name="associator">
-          {% for associator in associators %}
-            <option value="{{ associator.id }}">{{ associator.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="mb-3">
         <label class="form-label fw-bold">Target Localisation:</label>
         <select class="form-select" name="localisation">
           {% for localisation in localisations %}

@@ -302,7 +302,6 @@ Open **http://localhost:49156** in a browser.
 | Control | Description |
 |---------|-------------|
 | **Radar servers** | Select which blah2 radar nodes to include (multi-select) |
-| **Associator** | Association method — `adsb-associator` (uses ADS‑B truth) or `geometric-associator` (blind) |
 | **Localisation** | Which algorithm to use for position fixing (see below) |
 | **ADS-B** | Select the ADS-B truth server for association and map overlay |
 | **Submit** | Start (or update) the processing request |
@@ -356,7 +355,6 @@ Trigger or poll a localisation request.
 | Parameter | Required | Example | Description |
 |-----------|----------|---------|-------------|
 | `server` | yes (repeat) | `server=radar1.example.com` | blah2 radar node URL. Repeat for each radar. |
-| `associator` | yes | `associator=adsb-associator` | Association method ID |
 | `localisation` | yes | `localisation=ellipse-parametric-mean` | Localisation algorithm ID |
 | `adsb` | yes | `adsb=adsb.example.com` | tar1090 server hostname |
 
