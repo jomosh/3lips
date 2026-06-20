@@ -245,9 +245,23 @@ async def event():
         item["server"], radar_dict_item, timestamp)
 
       if blind_candidates:
-        # Run JIPDA tracker on blind candidates
-        tracked_blind = jipda.process(
-          blind_candidates, radar_dict_item, timestamp)
+        # Only run JIPDA with ≥3 radars — with 1-2 radars there is no
+        # unique 3D fix, so detection dots would appear at misleading
+        # TX-RX midpoint positions.  nc_ ellipsoids are still generated
+        # below (they correctly show all possible target locations).
+        n_radars_available = sum(
+          1 for rn in item["server"]
+          if rn in radar_dict_item
+          and radar_dict_item[rn] is not None
+          and radar_dict_item[rn].get("config") is not None
+          and radar_dict_item[rn].get("detection") is not None
+          and radar_dict_item[rn]["detection"].get("delay")
+        )
+        if n_radars_available >= 3:
+          tracked_blind = jipda.process(
+            blind_candidates, radar_dict_item, timestamp)
+        else:
+          tracked_blind = {}
 
         # Cross-reference: classify blind targets vs ADS-B targets
         for track_id, track_data in tracked_blind.items():
