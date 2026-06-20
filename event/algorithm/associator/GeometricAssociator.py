@@ -78,9 +78,9 @@ class GeometricAssociator:
             detection_lists.append(det_pairs)
             radar_names_valid.append(radar_name)
 
-        # Need at least 3 radars for reliable blind association
+        # Need at least 1 radar for blind association; ≥3 gives ghost suppression
         n_radars = len(detection_lists)
-        if n_radars < 3:
+        if n_radars < 1:
             return {}
 
         # ---- 2. Enumerate all cross-radar N-tuples ----------------------------
