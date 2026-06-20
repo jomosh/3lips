@@ -75,17 +75,37 @@ function event_ellipsoid() {
           var hue = hashToHue(targetHex, 290, 330);
           var color = 'hsla(' + hue + ', 85%, 55%, 0.45)';
 
-          for (var i = 0; i < points.length; i++) {
-            addPoint(
-              points[i][0],
-              points[i][1],
-              points[i][2],
-              "ellipsoids",
-              color,
-              style_ellipsoid.pointSize,
-              style_ellipsoid.type,
-              Date.now()
-            );
+          if (isNoncooperative) {
+            // Non-cooperative ellipsoid points get a distinct type and
+            // a subtle white border so they are visually distinguishable
+            // from cooperative ellipsoid points.
+            for (var i = 0; i < points.length; i++) {
+              addPoint(
+                points[i][0],
+                points[i][1],
+                points[i][2],
+                "ellipsoids-noncoop",
+                color,
+                style_ellipsoid.pointSize,
+                "ellipsoids-noncoop",
+                Date.now(),
+                1,
+                'rgba(255,255,255,0.5)'
+              );
+            }
+          } else {
+            for (var i = 0; i < points.length; i++) {
+              addPoint(
+                points[i][0],
+                points[i][1],
+                points[i][2],
+                "ellipsoids",
+                color,
+                style_ellipsoid.pointSize,
+                style_ellipsoid.type,
+                Date.now()
+              );
+            }
           }
 
         }

@@ -445,9 +445,11 @@ map.on('load', function () {
     type: 'circle',
     source: 'points',
     paint: {
-      'circle-color':   ['get', 'color'],
-      'circle-radius':  ['/', ['to-number', ['get', 'size']], 2],
-      'circle-opacity': ['get', 'opacity'],
+      'circle-color':        ['get', 'color'],
+      'circle-radius':       ['/', ['to-number', ['get', 'size']], 2],
+      'circle-opacity':      ['get', 'opacity'],
+      'circle-stroke-width': ['get', 'strokeWidth'],
+      'circle-stroke-color': ['get', 'strokeColor'],
     },
   });
 
@@ -601,7 +603,7 @@ map.on('load', function () {
  *   point was added.
  * @returns {object} The GeoJSON Feature representing the added point.
  */
-function addPoint(latitude, longitude, altitude, pointName, pointColor, pointSize, type, timestamp) {
+function addPoint(latitude, longitude, altitude, pointName, pointColor, pointSize, type, timestamp, strokeWidth, strokeColor) {
   const id = type + '_' + timestamp + '_' + Math.random().toString(36).substring(2, 11);
   const feature = {
     type: 'Feature',
@@ -616,6 +618,8 @@ function addPoint(latitude, longitude, altitude, pointName, pointColor, pointSiz
       size: pointSize,
       opacity: 1.0,
       altitude: altitude,
+      strokeWidth: strokeWidth || 0,
+      strokeColor: strokeColor || 'rgba(0,0,0,0)',
     },
   };
   pointFeatures.push(feature);

@@ -129,7 +129,9 @@ function event_radar() {
                 ncoopColor,
                 style_point.pointSize,
                 "noncooperative",
-                Date.now()
+                Date.now(),
+                3,
+                '#ffffff'
               );
             }
 
