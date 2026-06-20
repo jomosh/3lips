@@ -196,7 +196,7 @@ async def event():
     if item["associator"] == "adsb-associator":
       associator = adsbAssociator
     elif item["associator"] == "geometric-associator":
-      associator = adsbAssociator  # fallback — use blind path below
+      associator = geometricAssociator
     else:
       print("Error: Associator invalid.")
       return
