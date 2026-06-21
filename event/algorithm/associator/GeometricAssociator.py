@@ -238,6 +238,8 @@ class GeometricAssociator:
         a = (bistatic_range_m + ellipsoid.distance) / 2
         b_sq = a * a - (ellipsoid.distance / 2) ** 2
         if b_sq <= 0:
+            print(f"Warning: GeometricAssociator: degenerate ellipsoid "
+                  f"(b_sq={b_sq:.1f}) for radar {ellipsoid.name}")
             return []
         b = math.sqrt(b_sq)
 

@@ -27,6 +27,7 @@ tracker:
     gamma: 16.27               # chi² 3-DOF at P=0.999
     P_exist_threshold: 0.1     # auto-delete tracks below this
     confirmation_epochs: 2     # M/N = 2/2 for track initiation
+    confirmation_gate: 2000    # metres — spatial gate for confirming pending tracks
     max_tracks: 20
 
 noncooperative:

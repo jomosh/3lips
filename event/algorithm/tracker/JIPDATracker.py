@@ -53,6 +53,7 @@ class JIPDATracker:
         self.P_exist_threshold = config.get('P_exist_threshold', 0.1)
         self.confirmation_epochs = config.get('confirmation_epochs', 2)
         self.max_tracks = config.get('max_tracks', 20)
+        self.confirmation_gate = config.get('confirmation_gate', 2000)  # metres
 
         self.tracks = {}          # track_id → track dict
         self.next_track_id = 1
@@ -234,13 +235,14 @@ class JIPDATracker:
 
             # 2-epoch confirmation logic
             matched = False
+            to_remove = []
             for pending in self._pending_tracks:
                 # Check if this candidate is near an already-pending candidate
                 dist = math.sqrt(
                     (init_pos[0] - pending['init_pos'][0])**2 +
                     (init_pos[1] - pending['init_pos'][1])**2 +
                     (init_pos[2] - pending['init_pos'][2])**2)
-                if dist < 2000.0:  # 2km — wide gate for confirmation
+                if dist < self.confirmation_gate:
                     pending['confirm_count'] += 1
                     if pending['confirm_count'] >= self.confirmation_epochs:
                         # Confirmed! Create a real track
@@ -255,9 +257,16 @@ class JIPDATracker:
                             meas, cfgs = cand_measurements[synth_id]
                             self.ekf.update(track, meas, cfgs)
                             associations[track_id] = synth_id
-                        self._pending_tracks.remove(pending)
+                        # Mark for removal after iteration (avoid modifying
+                        # list during the for loop).
+                        to_remove.append(pending)
                     matched = True
                     break
+            # Remove confirmed pending tracks after iteration
+            for p in to_remove:
+                if p in self._pending_tracks:
+                    self._pending_tracks.remove(p)
+            to_remove.clear()
             if not matched:
                 self._pending_tracks.append({
                     'init_pos': init_pos,
