@@ -39,6 +39,8 @@ class EKFTracker:
         """
         self.q = config.get('process_noise_q', 1.0)       # m²/s³
         self.R = config.get('measurement_noise_r', 2500.0)  # m²
+        self.init_pos_sigma = config.get('init_pos_sigma', 500)  # metres
+        self.init_vel_sigma = config.get('init_vel_sigma', 50)    # m/s
         self.state_dim = 6
 
     def initiate(self, ecef_position: list, timestamp_ms: int) -> dict:
@@ -50,9 +52,10 @@ class EKFTracker:
             age, and timestamp.
         """
         P0 = np.eye(self.state_dim, dtype=float)
-        # Position uncertainty ~500m, velocity uncertainty ~50 m/s
-        P0[0, 0] = P0[1, 1] = P0[2, 2] = 250000.0   # 500²
-        P0[3, 3] = P0[4, 4] = P0[5, 5] = 2500.0      # 50²
+        pos_var = self.init_pos_sigma ** 2
+        vel_var = self.init_vel_sigma ** 2
+        P0[0, 0] = P0[1, 1] = P0[2, 2] = pos_var
+        P0[3, 3] = P0[4, 4] = P0[5, 5] = vel_var
 
         return {
             'state': np.array([

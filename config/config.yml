@@ -21,6 +21,8 @@ tracker:
   ekf:
     process_noise_q: 1.0       # m²/s³ — continuous white noise acceleration
     measurement_noise_r: 2500  # m² — bistatic range variance (~50m std)
+    init_pos_sigma: 500        # metres — initial position uncertainty (std dev)
+    init_vel_sigma: 50         # m/s — initial velocity uncertainty (std dev)
   jipda:
     P_D: 0.9                   # probability of detection
     P_G: 0.999                 # gate probability
