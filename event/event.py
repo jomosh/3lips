@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import math
 import requests
 import threading
 import asyncio
@@ -115,7 +116,7 @@ def _sample_and_convert_ellipsoid(radar_config, radar_name, delay,
   points = localisation.sample(ellipsoid, delay * 1000, n_display)
   for i in range(len(points)):
     lat, lon, alt = Geometry.ecef2lla(points[i][0], points[i][1], points[i][2])
-    alt = round(alt)
+    alt = round(alt) if not (math.isnan(alt) or math.isinf(alt)) else 0
     points[i] = ([round(lat, 3), round(lon, 3), alt])
   return points
 
