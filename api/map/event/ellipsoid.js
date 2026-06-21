@@ -40,8 +40,10 @@ function event_ellipsoid() {
       if (ellipsoidCount < threshold) {
         if (fadeSec > 0) {
           removeEntitiesOlderThanAndFade("ellipsoids", fadeSec, 1.0);
+          removeEntitiesOlderThanAndFade("ellipsoids-noncoop", fadeSec, 1.0);
         } else {
           removeEntitiesByType("ellipsoids");
+          removeEntitiesByType("ellipsoids-noncoop");
         }
         return;
       }
@@ -50,8 +52,10 @@ function event_ellipsoid() {
       // instantly deleting them — allows persistent ellipsoid trails.
       if (fadeSec > 0) {
         removeEntitiesOlderThanAndFade("ellipsoids", fadeSec, 1.0);
+        removeEntitiesOlderThanAndFade("ellipsoids-noncoop", fadeSec, 1.0);
       } else {
         removeEntitiesByType("ellipsoids");
+        removeEntitiesByType("ellipsoids-noncoop");
       }
       for (const key in data["ellipsoids"]) {
         if (data["ellipsoids"].hasOwnProperty(key)) {
