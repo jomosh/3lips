@@ -142,7 +142,8 @@ class JIPDATracker:
                     nis = self.ekf.update(
                         self._copy_track(track), meas, cfgs)
                     # Revert — we only wanted the NIS, not the state update
-                except Exception:
+                except Exception as e:
+                    print(f"JIPDA: NIS gating failed for track {track_id}: {e}")
                     continue
                 nis_matrix[i][j] = nis
                 if nis < self.gamma:
