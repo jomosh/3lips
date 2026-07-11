@@ -217,11 +217,16 @@ map:
 
 # ─── System ──────────────────────────────────────────────────────────────────
 3lips:
-  save: true     # If true, write all API state to a .ndjson file in save/
-                 # for offline replay and accuracy analysis.
-  tDelete: 60    # Seconds of inactivity before removing an API request
-                 # from the processing queue. A browser tab that is closed
-                 # or stops polling will be cleaned up after this time.
+  save: true                  # Write all API state to a .ndjson file in save/
+                              # for offline replay and accuracy analysis.
+  save_retention_hours: 24    # Auto-delete .ndjson files older than this many
+                              # hours.  Set to 0 to keep all files indefinitely.
+                              # Each restart creates a new file; over days the
+                              # save/ directory can fill the disk.
+  tDelete: 60                 # Seconds of inactivity before removing an API
+                              # request from the processing queue.  A browser
+                              # tab that is closed or stops polling will be
+                              # cleaned up after this time.
 ```
 
 ---
@@ -246,6 +251,7 @@ map:
 | `map.center_height` | int | metres | Initial map N-S extent |
 | `map.tar1090` | string | — | tar1090 ADS-B overlay server |
 | `3lips.save` | bool | — | Enable NDJSON save file |
+| `3lips.save_retention_hours` | int | hours | Auto-delete .ndjson files older than this (0 = keep all) |
 | `3lips.tDelete` | int | seconds | Idle API session expiry |
 | `associate.geometric.threshold` | int | metres | Blind association intersection distance |
 | `associate.geometric.nSamples` | int | — | Ellipse samples per detection for blind association |
@@ -685,9 +691,29 @@ python3 -m unittest discover -s ../test/event/ -p "Test*.py" -v
 
 ### Saved session files
 
-When `3lips.save: true`, each run creates a `.ndjson` file in `save/` named by Unix timestamp. Each line is a JSON snapshot of the full API state at one epoch. Use `script/plot_accuracy.py` and `script/plot_associate.py` for offline analysis.
+When `3lips.save: true`, each run creates a `.ndjson` file in `save/` named by
+Unix timestamp. Each line is a JSON snapshot of the full API state at one epoch.
 
+The `save/` directory can grow large over time — a typical deployment produces
+~5–10 KB per epoch (hundreds of MB per day).  Set `3lips.save_retention_hours`
+to automatically delete files older than the configured age.  Set
+`3lips.save: false` to disable saving entirely.
+
+#### Analysis scripts (`script/`)
+
+Two Python scripts are provided for offline post‑processing:
+
+| Script | Purpose |
+|---|---|
+| `plot_accuracy.py` | Plots 2D localisation error vs ADS‑B truth over time (CEP50, RMSE). |
+| `plot_associate.py` | Visualises detection association results (which radar detections were matched to which target). |
+
+**Usage:**
 ```bash
 cd script
 pip install -r requirements.txt
 python plot_accuracy.py ../save/<timestamp>.ndjson
+python plot_associate.py ../save/<timestamp>.ndjson
+```
+
+See `script/README.md` for full options and example plots.

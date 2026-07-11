@@ -72,4 +72,5 @@ event:
 
 3lips:
   save: true
-  tDelete: 60
+  save_retention_hours: 24   # delete .ndjson files older than this (0 = keep all)
+  tDelete: 60                # seconds of inactivity before removing an API session

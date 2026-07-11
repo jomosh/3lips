@@ -46,6 +46,7 @@ try:
   adsb2ddHttps = config['associate']['adsb']['adsb2dd_https']
   save = config['3lips']['save']
   tDelete = config['3lips']['tDelete']
+  saveRetentionHours = config.get('3lips', {}).get('save_retention_hours', 24)
   tar1090Https = config['map']['tar1090_https']
   eventInterval = config.get('event', {}).get('interval', 1.0)
   geometricConfig = config.get('associate', {}).get('geometric', {})
@@ -362,6 +363,7 @@ async def event():
   # save to file
   if save:
     append_api_to_file(api)
+    _cleanup_save_files('/app/save', saveRetentionHours)
 
 
 # event loop
@@ -370,6 +372,25 @@ async def main():
   while True:
     await event()
     await asyncio.sleep(eventInterval)
+
+def _cleanup_save_files(save_dir, retention_hours):
+  """Delete .ndjson files older than retention_hours from save_dir."""
+  if retention_hours <= 0:
+    return
+  try:
+    cutoff = time.time() - retention_hours * 3600
+    for fname in os.listdir(save_dir):
+      if not fname.endswith('.ndjson'):
+        continue
+      fpath = os.path.join(save_dir, fname)
+      try:
+        if os.path.getmtime(fpath) < cutoff:
+          os.remove(fpath)
+          print(f"Cleaned up old save file: {fname}")
+      except OSError:
+        pass
+  except OSError:
+    pass
 
 def append_api_to_file(api_object, filename=saveFile):
 
