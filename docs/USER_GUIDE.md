@@ -127,6 +127,74 @@ localisation:
     threshold: 500   # Same meaning as ellipse threshold, in metres.
     nDisplay: 50     # Points sent to map for ellipsoid visualisation.
 
+# ─── Blind (ADS‑B‑Free) Association ──────────────────────────────────────────
+# These settings only take effect when noncooperative.enabled is true (see below).
+associate:
+  geometric:
+    threshold: 500        # Metres — spatial proximity for intersection test.
+                          # Candidates whose sampled ellipse points don't all
+                          # mutually intersect within this distance are rejected.
+                          # Start at 500 and tune with your radar's range resolution.
+    nSamples: 50          # Ellipse sample points per detection. Lower than
+                          # localisation nSamples for speed (association samples
+                          # many candidate tuples). Increase for better ghost
+                          # rejection at the cost of CPU.
+    doppler_tolerance: 5  # Hz — Doppler sign-consistency filter. All radars in
+                          # a candidate tuple must observe the same Doppler sign
+                          # (all positive or all negative). Tolerance allows for
+                          # noise: set to 2× your CPI Doppler resolution.
+    max_detections: 20    # Per-radar guard. If any radar has more than this many
+                          # detections in one epoch, enumeration is skipped entirely
+                          # (clutter / interference spike protection).
+
+# ─── EKF Tracker ─────────────────────────────────────────────────────────────
+tracker:
+  ekf:
+    process_noise_q: 1.0       # m²/s³ — continuous white-noise acceleration.
+                               # Lower values = smoother tracks but slower response
+                               # to manoeuvring targets. 1.0 suits civil aviation.
+    measurement_noise_r: 2500  # m² — bistatic range variance. Default 2500 ≈
+                               # 50 m standard deviation, typical for FM-band PCL.
+                               # Reduce for DAB/DVB-T (higher bandwidth).
+
+# ─── JIPDA Multi‑Target Tracker ──────────────────────────────────────────────
+  jipda:
+    P_D: 0.9                   # Probability of detection — expected fraction of
+                               # epochs where a real target produces a detection.
+                               0.9 = 90 % (one missed detection every 10 epochs).
+    P_G: 0.999                 # Gate probability — fraction of true measurements
+                               # expected to fall inside the association gate.
+    gamma: 16.27               # Chi² gate threshold for 3 degrees of freedom at
+                               # P_G = 0.999. Increase to widen the gate (accept
+                               # noisier associations); decrease to tighten it.
+    P_exist_threshold: 0.1     # Tracks with existence probability below this are
+                               # automatically deleted. Lower = keep tracks longer
+                               # through gaps; higher = faster deletion of ghosts.
+    confirmation_epochs: 2     # Number of consecutive epochs a candidate must be
+                               # seen before a confirmed track is created (M/N = 2/2).
+    max_tracks: 20             # Hard cap on concurrent tracks. Prevents runaway
+                               # track creation in high-clutter environments.
+
+# ─── Non‑Cooperative Target Detection ────────────────────────────────────────
+noncooperative:
+  enabled: false               # Enable blind (ADS-B‑free) detection of targets
+                               # that do NOT broadcast ADS-B. When true, the
+                               # Geometric Associator + EKF + JIPDA pipeline runs
+                               # alongside the existing ADS-B path. Non-cooperative
+                               # targets appear on the map with a "Non-coop" label
+                               # and a yellow marker colour.
+  match_distance: 1000         # Metres — cross-reference threshold. A blind
+                               # target whose localised position is within this
+                               # distance of an ADS-B target is classified as
+                               # cooperative (same aircraft). Targets farther away
+                               # are flagged as non-cooperative.
+
+# ─── Event Loop ──────────────────────────────────────────────────────────────
+event:
+  interval: 0.5        # Seconds between backend polling cycles. Default 1.0.
+                        # Reduce to catch shorter‑lived detections (e.g. 0.5 for
+                        # 2 Hz polling). Doubles HTTP load on radar nodes.
+
 # ─── Map Display ─────────────────────────────────────────────────────────────
 map:
   location:
@@ -149,11 +217,16 @@ map:
 
 # ─── System ──────────────────────────────────────────────────────────────────
 3lips:
-  save: true     # If true, write all API state to a .ndjson file in save/
-                 # for offline replay and accuracy analysis.
-  tDelete: 60    # Seconds of inactivity before removing an API request
-                 # from the processing queue. A browser tab that is closed
-                 # or stops polling will be cleaned up after this time.
+  save: true                  # Write all API state to a .ndjson file in save/
+                              # for offline replay and accuracy analysis.
+  save_retention_hours: 24    # Auto-delete .ndjson files older than this many
+                              # hours.  Set to 0 to keep all files indefinitely.
+                              # Each restart creates a new file; over days the
+                              # save/ directory can fill the disk.
+  tDelete: 60                 # Seconds of inactivity before removing an API
+                              # request from the processing queue.  A browser
+                              # tab that is closed or stops polling will be
+                              # cleaned up after this time.
 ```
 
 ---
@@ -178,7 +251,23 @@ map:
 | `map.center_height` | int | metres | Initial map N-S extent |
 | `map.tar1090` | string | — | tar1090 ADS-B overlay server |
 | `3lips.save` | bool | — | Enable NDJSON save file |
+| `3lips.save_retention_hours` | int | hours | Auto-delete .ndjson files older than this (0 = keep all) |
 | `3lips.tDelete` | int | seconds | Idle API session expiry |
+| `associate.geometric.threshold` | int | metres | Blind association intersection distance |
+| `associate.geometric.nSamples` | int | — | Ellipse samples per detection for blind association |
+| `associate.geometric.doppler_tolerance` | int | Hz | Doppler sign-consistency filter range |
+| `associate.geometric.max_detections` | int | — | Per-radar clutter guard (skip epoch above this) |
+| `tracker.ekf.process_noise_q` | float | m²/s³ | Process noise for EKF constant-velocity model |
+| `tracker.ekf.measurement_noise_r` | float | m² | Bistatic range measurement variance |
+| `tracker.jipda.P_D` | float | — | Probability of detection (0.0–1.0) |
+| `tracker.jipda.P_G` | float | — | Gate probability (0.0–1.0) |
+| `tracker.jipda.gamma` | float | — | Chi² gate threshold (3-DOF) |
+| `tracker.jipda.P_exist_threshold` | float | — | Minimum existence probability for track deletion |
+| `tracker.jipda.confirmation_epochs` | int | epochs | Consecutive hits needed for track initiation |
+| `tracker.jipda.max_tracks` | int | — | Hard limit on concurrent tracks |
+| `noncooperative.enabled` | bool | — | Enable blind (ADS-B‑free) target detection |
+| `noncooperative.match_distance` | int | metres | Max distance to match blind target to ADS-B |
+| `event.interval` | float | seconds | Backend polling cycle interval |
 
 ---
 
@@ -215,19 +304,49 @@ docker compose logs -f api     # API request handling
 
 Open **http://localhost:49156** in a browser.
 
-### Controls
+### Main Controls
 | Control | Description |
 |---------|-------------|
 | **Radar servers** | Select which blah2 radar nodes to include (multi-select) |
-| **Associator** | Association method — currently only ADS-B Associator |
 | **Localisation** | Which algorithm to use for position fixing (see below) |
 | **ADS-B** | Select the ADS-B truth server for association and map overlay |
 | **Submit** | Start (or update) the processing request |
 
+### Settings Popup (⚙️ Cog Icon, Top-Left)
+
+Click the gear icon in the top-left corner of the map to open the settings panel. The panel
+stays open until you click the gear again, allowing multiple adjustments without re-opening.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| **Altitude display** | Toggle button | metres | Switch altitude units between metres and feet. Updates all target labels and the colour legend bar. Preference is saved in your browser. |
+| **Min radars for ellipsoids** | Number (1–10) | 3 | How many unique radars must have ellipsoid data before the bistatic surfaces are drawn on the map. Set to **1** to see single-radar ellipsoids; set to **3** (default) to match the localisation requirement. |
+| **Ellipsoid fade time** | Seconds (0–60) | 0 | How long ellipsoid points stay on the map after their radar stops providing data. At **0** (default) points disappear immediately. Set to e.g. **5** to leave a fading trail that helps visualise historical detections. |
+| **Localise cooperative targets** | Checkbox | ☑ checked | When unchecked, hides cooperative (ADS‑B‑matched) ellipsoids/ellipses and detection dots/labels. **Non‑cooperative targets are always shown** regardless of this toggle — they are radar-only detections with no ADS‑B match. |
+| **Show cooperative targets** | Checkbox | ☑ checked | When unchecked, hides the raw ADS‑B truth overlay from tar1090 (aircraft positions, callsigns, and altitudes). Independent of localisation — you can show truth without localisation, or vice versa. |
+
 Results update once per second. The map shows:
-- **Coloured ellipses/ellipsoids**: the sampled bistatic surfaces for each radar (for parametric methods)
-- **Target markers**: localised positions
-- **ADS-B overlay**: truth positions from tar1090 for comparison
+- **Coloured ellipses/ellipsoids**: the sampled bistatic surfaces for each radar (magenta/rose, per‑target hue)
+- **Target markers**: localised positions — altitude-coloured for cooperative (ADS‑B‑matched) targets, yellow for non‑cooperative targets
+- **ADS-B overlay**: truth positions from tar1090 for comparison (when "Show cooperative targets" is checked)
+- **Non-cooperative targets**: appear with a "Non-coop" label and yellow marker when `noncooperative.enabled` is true. Their ellipsoids and detection dots are always visible regardless of the toggles above.
+
+### Non‑Cooperative Target Visibility
+
+Non‑cooperative targets are classified **server-side** in the event loop. The
+`noncooperative.match_distance` config value (default **1000 metres**) controls
+the threshold:
+
+1. The Geometric Associator finds blind candidates from radar detections alone.
+2. The JIPDA tracker estimates each candidate's ECEF position.
+3. For each blind target, the nearest ADS‑B aircraft position is found in ECEF space.
+4. If the distance is **greater than** `match_distance`, the target is classified as
+   **non‑cooperative** — it has no matching ADS‑B aircraft. Its ellipsoids receive
+   an `"nc_"` key prefix and it is always rendered on the map.
+
+Targets within `match_distance` of an ADS‑B aircraft are classified as
+**cooperative** (the same aircraft seen by both radar and ADS‑B). Their ellipsoids
+and detection dots are controlled by the "Localise cooperative targets" toggle.
 
 ---
 
@@ -242,7 +361,6 @@ Trigger or poll a localisation request.
 | Parameter | Required | Example | Description |
 |-----------|----------|---------|-------------|
 | `server` | yes (repeat) | `server=radar1.example.com` | blah2 radar node URL. Repeat for each radar. |
-| `associator` | yes | `associator=adsb-associator` | Association method ID |
 | `localisation` | yes | `localisation=ellipse-parametric-mean` | Localisation algorithm ID |
 | `adsb` | yes | `adsb=adsb.example.com` | tar1090 server hostname |
 
@@ -273,7 +391,8 @@ GET /api?server=radar1.example.com&server=radar2.example.com&associator=adsb-ass
     "aabbcc": { "points": [[51.52, -0.48, 0]] }
   },
   "ellipsoids": {
-    "radar1.example.com": [[51.1, -0.8, 0], [51.2, -0.7, 0], "..."]
+    "aabbcc-radar1": [[51.1, -0.8, 0], [51.2, -0.7, 0], "..."],
+    "nc_T1-radar1": [[51.3, -0.9, 500], [51.4, -0.8, 500], "..."]
   },
   "time": 0.085
 }
@@ -287,7 +406,8 @@ GET /api?server=radar1.example.com&server=radar2.example.com&associator=adsb-ass
 | `truth` | object | ADS-B truth positions by aircraft hex code |
 | `detections_associated` | object | Associated detections by hex, per radar |
 | `detections_localised` | object | Localised positions `[lat, lon, alt]` per hex |
-| `ellipsoids` | object | Sampled ellipsoid points per radar (for map display) |
+| `detections_noncooperative` | object | (Optional) Non‑cooperative targets `[lat, lon, alt]` by track ID. Present only when `noncooperative.enabled` is true. |
+| `ellipsoids` | object | Sampled ellipsoid points per target+radar. Cooperative targets use keys of the form `"hex‑radarName"`. Non‑cooperative targets (present only when `noncooperative.enabled` is true) use keys prefixed `"nc_"`: `"nc_synthId‑radarName"`. |
 | `time` | float | Processing time in seconds for this epoch |
 
 ---
@@ -471,7 +591,7 @@ If a radar node is unreachable (timeout or error), 3lips continues with the rema
 | Altitude (EllipsoidParametric) | ~500–2000m | Highly geometry dependent |
 
 ### Known Limitations
-1. **ADS-B dependency**: The current association requires ADS-B truth. Targets not broadcasting ADS-B (military, general aviation without transponder) are not localised.
+1. **ADS-B dependency (mitigated)**: By default, association requires ADS-B truth via adsb2dd. Targets not broadcasting ADS-B (military, general aviation without transponder) are invisible. Enable `noncooperative.enabled: true` in `config.yml` to activate the blind Geometric Associator + EKF + JIPDA pipeline. Non‑cooperative targets then appear on the map with a "Non‑coop" label and yellow marker. Blind association requires ≥ 3 radars (ghost probability ≈ 6×10⁻⁶ per candidate at N=3).
 2. **Minimum 3 radars** for parametric methods. With only 2 radars, two ellipses intersect along a curve, not a point.
 3. **SphericalIntersection requires a shared node**: All radars must share the same transmitter (Topology A) or the same receiver (Topology B — currently a bug, TODO C6). Mixing independent TX/RX pairs (Topology C) gives wrong positions silently. See the [Deployment Topologies](#deployment-topologies) section for full details.
 4. **No temporal smoothing**: Each epoch produces an independent position fix. Track jitter is expected; a Kalman filter is planned (see `TODO.md`).
@@ -558,6 +678,7 @@ python3 -m unittest discover -s ../test/event/ -p "Test*.py" -v
 │   │   ├── associator/     # Detection association algorithms
 │   │   ├── geometry/       # WGS-84 coordinate transforms
 │   │   ├── localisation/   # Position fix algorithms
+│   │   ├── tracker/        # EKF + JIPDA multi‑target tracking
 │   │   └── truth/          # ADS-B truth fetching
 │   └── data/
 │       └── Ellipsoid.py    # Bistatic ellipsoid geometry
@@ -570,10 +691,29 @@ python3 -m unittest discover -s ../test/event/ -p "Test*.py" -v
 
 ### Saved session files
 
-When `3lips.save: true`, each run creates a `.ndjson` file in `save/` named by Unix timestamp. Each line is a JSON snapshot of the full API state at one epoch. Use `script/plot_accuracy.py` and `script/plot_associate.py` for offline analysis.
+When `3lips.save: true`, each run creates a `.ndjson` file in `save/` named by
+Unix timestamp. Each line is a JSON snapshot of the full API state at one epoch.
 
+The `save/` directory can grow large over time — a typical deployment produces
+~5–10 KB per epoch (hundreds of MB per day).  Set `3lips.save_retention_hours`
+to automatically delete files older than the configured age.  Set
+`3lips.save: false` to disable saving entirely.
+
+#### Analysis scripts (`script/`)
+
+Two Python scripts are provided for offline post‑processing:
+
+| Script | Purpose |
+|---|---|
+| `plot_accuracy.py` | Plots 2D localisation error vs ADS‑B truth over time (CEP50, RMSE). |
+| `plot_associate.py` | Visualises detection association results (which radar detections were matched to which target). |
+
+**Usage:**
 ```bash
 cd script
 pip install -r requirements.txt
 python plot_accuracy.py ../save/<timestamp>.ndjson
+python plot_associate.py ../save/<timestamp>.ndjson
 ```
+
+See `script/README.md` for full options and example plots.

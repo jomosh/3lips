@@ -11,16 +11,40 @@ associate:
     tDelete: 5
     adsb2dd: "adsb2dd.30hours.dev:49155"
     adsb2dd_https: false
+  geometric:
+    threshold: 500        # metres — spatial proximity for intersection test
+    nSamples: 50          # ellipse samples per detection
+    doppler_tolerance: 5  # Hz — Doppler sign-consistency filter
+    max_detections: 20    # per-radar guard; skip epoch above this
+
+tracker:
+  ekf:
+    process_noise_q: 1.0       # m²/s³ — continuous white noise acceleration
+    measurement_noise_r: 2500  # m² — bistatic range variance (~50m std)
+    init_pos_sigma: 500        # metres — initial position uncertainty (std dev)
+    init_vel_sigma: 50         # m/s — initial velocity uncertainty (std dev)
+  jipda:
+    P_D: 0.9                   # probability of detection
+    P_G: 0.999                 # gate probability
+    gamma: 16.27               # chi² 3-DOF at P=0.999
+    P_exist_threshold: 0.1     # auto-delete tracks below this
+    confirmation_epochs: 2     # M/N = 2/2 for track initiation
+    confirmation_gate: 2000    # metres — spatial gate for confirming pending tracks
+    max_tracks: 20
+
+noncooperative:
+  enabled: false               # set to true to detect non-ADS-B targets
+  match_distance: 1000         # metres — max distance to match blind↔ADS-B
 
 localisation:
-  ellipse:
-    nSamples: 100
-    threshold: 500
-    nDisplay: 50
-  ellipsoid:
-    nSamples: 60
-    threshold: 500
-    nDisplay: 50
+  ellipse:                      # 2D (ground-level) parametric localisation
+    nSamples: 100               # azimuth samples around each ellipse
+    threshold: 500              # metres — max distance for intersection match
+    nDisplay: 50                # ellipsoid points rendered on the map
+  ellipsoid:                    # 3D parametric localisation
+    nSamples: 60                # azimuth samples (lower — more CPU per sample)
+    threshold: 500              # metres — max distance for intersection match
+    nDisplay: 50                # ellipsoid points rendered on the map
 
 map:
   location:
@@ -28,6 +52,10 @@ map:
     longitude: -0.1278
   center_width: 50000
   center_height: 40000
+  # Set to false to hide radar TX/RX site locations on the map and from the
+  # public API.  When false, /api/proxy/config returns 403 and no site pins
+  # are drawn.  The event loop continues to use radar config internally.
+  show_radar_sites: true
   # Default tile servers point at public OSM/CARTO/OpenTopoMap endpoints.
   # These services have usage policies and rate limits; for production use
   # replace these values with your own tile proxy or self-hosted tile server.
@@ -39,6 +67,10 @@ map:
   tar1090: "adsb.30hours.dev"
   tar1090_https: false
 
+event:
+  interval: 0.5  # seconds between backend polling cycles (was hardcoded 1.0)
+
 3lips:
   save: true
-  tDelete: 60
+  save_retention_hours: 24   # delete .ndjson files older than this (0 = keep all)
+  tDelete: 60                # seconds of inactivity before removing an API session

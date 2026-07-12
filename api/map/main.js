@@ -66,6 +66,58 @@ var altUnit = (function() {
 })();
 
 /**
+ * Minimum number of radars required before ellipsoids are displayed on the map.
+ * Persisted in localStorage so the preference survives page reloads.
+ * Default = 3 (standard multi-static localisation).  Set to 1 to see single-radar ellipsoids.
+ */
+var minRadarEllipsoids = (function() {
+  try {
+    var v = parseInt(localStorage.getItem('3lips_minRadarEllipsoids'), 10);
+    return (v >= 1) ? v : 3;
+  } catch(e) { return 3; }
+})();
+
+/**
+ * Number of seconds ellipsoid points persist and fade after their last update.
+ * 0 = immediate removal (current/default behaviour).
+ * Persisted in localStorage key '3lips_ellipsoidFadeTime'.
+ */
+var ellipsoidFadeTime = (function() {
+  try {
+    var v = parseInt(localStorage.getItem('3lips_ellipsoidFadeTime'), 10);
+    return (v >= 0) ? v : 0;
+  } catch(e) { return 0; }
+})();
+
+/**
+ * Whether to show cooperative (ADS-B) targets from tar1090 on the map.
+ * When false, ADS-B truth dots and labels are hidden.
+ * Independent of localisation — this controls raw truth display only.
+ * Persisted in localStorage key '3lips_showCooperativeTargets', default true.
+ */
+var showCooperativeTargets = (function() {
+  try {
+    var v = localStorage.getItem('3lips_showCooperativeTargets');
+    if (v === 'false') return false;
+    return true;
+  } catch(e) { return true; }
+})();
+
+/**
+ * Whether to localise cooperative (ADS-B-associated) targets on the map.
+ * When false, cooperative ellipsoids and cooperative detection dots/labels
+ * are hidden.  Non-cooperative (blah2-only) localisation output is always
+ * shown regardless of this setting.
+ * Persisted in localStorage key '3lips_localiseCooperativeTargets', default true.
+ */
+var localiseCooperativeTargets = (function() {
+  try {
+    var v = localStorage.getItem('3lips_localiseCooperativeTargets');
+    if (v === 'false') return false;
+    return true;
+  } catch(e) { return true; }
+})();
+/**
  * @brief Strips HTML/XML special characters from external data and
  * truncates to a safe display length for MapLibre text-field labels.
  * @param {string} text - Raw input string.
@@ -127,8 +179,6 @@ function toggleAltitudeUnit() {
   // Update settings popup button text
   var btn = document.getElementById('btn-alt-unit');
   if (btn) btn.textContent = 'Unit: ' + (altUnit === 'm' ? 'metres' : 'feet');
-  var popup = document.getElementById('settings-popup');
-  if (popup) popup.style.display = 'none';
 }
 
 /**
@@ -138,6 +188,82 @@ function toggleSettingsPopup() {
   var popup = document.getElementById('settings-popup');
   if (!popup) return;
   popup.style.display = (popup.style.display === 'block') ? 'none' : 'block';
+}
+
+/**
+ * @brief Updates the minimum radar count threshold for ellipsoid display.
+ * Called from the settings popup number input's onchange handler.
+ * @param {string|number} val - The new threshold value (positive integer).
+ */
+function setMinRadarEllipsoids(val) {
+  var n = parseInt(val, 10);
+  if (isNaN(n) || n < 1) {
+    n = 3;
+  }
+  minRadarEllipsoids = n;
+  try { localStorage.setItem('3lips_minRadarEllipsoids', String(n)); } catch(e) {}
+  // Sync the input field in case value was clamped
+  var inp = document.getElementById('input-min-radar-ellipsoids');
+  if (inp) inp.value = n;
+  // Immediately re-apply the filter to current ellipsoids
+  if (typeof event_ellipsoid === 'function') {
+    event_ellipsoid();
+  }
+}
+
+/**
+ * @brief Updates the ellipsoid fade time (seconds points persist after last update).
+ * Called from the settings popup number input's onchange handler.
+ * @param {string|number} val - The new fade duration (non-negative integer, 0 = off).
+ */
+function setEllipsoidFadeTime(val) {
+  var n = parseInt(val, 10);
+  if (isNaN(n) || n < 0) {
+    n = 0;
+  }
+  ellipsoidFadeTime = n;
+  try { localStorage.setItem('3lips_ellipsoidFadeTime', String(n)); } catch(e) {}
+  var inp = document.getElementById('input-ellipsoid-fade');
+  if (inp) inp.value = n;
+}
+
+/**
+ * @brief Toggles visibility of cooperative (ADS-B) targets from tar1090.
+ * Called from the settings popup checkbox onchange handler.
+ * @param {boolean} show - Whether to show ADS-B truth targets.
+ */
+function setShowCooperativeTargets(show) {
+  showCooperativeTargets = show;
+  try { localStorage.setItem('3lips_showCooperativeTargets', String(show)); } catch(e) {}
+  // Sync checkbox
+  var cb = document.getElementById('input-show-cooperative');
+  if (cb) cb.checked = show;
+  // Re-run ADS-B poll to apply immediately
+  if (typeof event_adsb === 'function') {
+    event_adsb();
+  }
+}
+
+/**
+ * @brief Toggles localisation of cooperative (ADS-B-associated) targets.
+ * When disabled, cooperative ellipsoids and cooperative detection dots/labels
+ * are hidden; non-cooperative localisation remains visible.
+ * Called from the settings popup checkbox onchange handler.
+ * @param {boolean} localise - Whether to localise cooperative targets.
+ */
+function setLocaliseCooperativeTargets(localise) {
+  localiseCooperativeTargets = localise;
+  try { localStorage.setItem('3lips_localiseCooperativeTargets', String(localise)); } catch(e) {}
+  // Sync checkbox
+  var cb = document.getElementById('input-localise-cooperative');
+  if (cb) cb.checked = localise;
+  // Re-run radar and ellipsoid polls to apply immediately
+  if (typeof event_radar === 'function') {
+    event_radar();
+  }
+  if (typeof event_ellipsoid === 'function') {
+    event_ellipsoid();
+  }
 }
 
 // global vars used by event handlers
@@ -319,9 +445,11 @@ map.on('load', function () {
     type: 'circle',
     source: 'points',
     paint: {
-      'circle-color':   ['get', 'color'],
-      'circle-radius':  ['/', ['to-number', ['get', 'size']], 2],
-      'circle-opacity': ['get', 'opacity'],
+      'circle-color':        ['get', 'color'],
+      'circle-radius':       ['/', ['to-number', ['get', 'size']], 2],
+      'circle-opacity':      ['get', 'opacity'],
+      'circle-stroke-width': ['get', 'strokeWidth'],
+      'circle-stroke-color': ['get', 'strokeColor'],
     },
   });
 
@@ -373,54 +501,58 @@ map.on('load', function () {
   });
 
   // add radar site points (rx and tx) from each blah2 server
-  const radar_names = new URLSearchParams(
-    window.location.search).getAll('server');
-  var radar_config_urls = radar_names.map(
-    name => window.location.origin + '/api/proxy/config?server=' + encodeURIComponent(name));
-  var style_radar = {};
-  style_radar.color = 'rgba(0, 0, 0, 1.0)';
-  style_radar.pointSize = 10;
-  style_radar.type = "radar";
-  style_radar.timestamp = Date.now();
-  radar_config_urls.forEach(url => {
-    fetch(url)
-      .then(response => {
-        if (!response.ok) {
-          throw new Error('Network response was not ok');
-        }
-        return response.json();
-      })
-      .then(data => {
-        // add radar rx and tx sites
-        if (!doesEntityNameExist(data.location.rx.name)) {
-          addPoint(
-            data.location.rx.latitude,
-            data.location.rx.longitude,
-            data.location.rx.altitude,
-            data.location.rx.name,
-            style_radar.color,
-            style_radar.pointSize,
-            style_radar.type,
-            style_radar.timestamp
-          );
-        }
-        if (!doesEntityNameExist(data.location.tx.name)) {
-          addPoint(
-            data.location.tx.latitude,
-            data.location.tx.longitude,
-            data.location.tx.altitude,
-            data.location.tx.name,
-            style_radar.color,
-            style_radar.pointSize,
-            style_radar.type,
-            style_radar.timestamp
-          );
-        }
-      })
-      .catch(error => {
-        console.error('Error during fetch:', error);
-      });
-  });
+  // Only when show_radar_sites is true in config (default); skip entirely when
+  // radar positions should not be publicly visible.
+  if (config && config.map && config.map.show_radar_sites !== false) {
+    const radar_names = new URLSearchParams(
+      window.location.search).getAll('server');
+    var radar_config_urls = radar_names.map(
+      name => window.location.origin + '/api/proxy/config?server=' + encodeURIComponent(name));
+    var style_radar = {};
+    style_radar.color = 'rgba(0, 0, 0, 1.0)';
+    style_radar.pointSize = 10;
+    style_radar.type = "radar";
+    style_radar.timestamp = Date.now();
+    radar_config_urls.forEach(url => {
+      fetch(url)
+        .then(response => {
+          if (!response.ok) {
+            throw new Error('Network response was not ok');
+          }
+          return response.json();
+        })
+        .then(data => {
+          // add radar rx and tx sites
+          if (!doesEntityNameExist(data.location.rx.name)) {
+            addPoint(
+              data.location.rx.latitude,
+              data.location.rx.longitude,
+              data.location.rx.altitude,
+              data.location.rx.name,
+              style_radar.color,
+              style_radar.pointSize,
+              style_radar.type,
+              style_radar.timestamp
+            );
+          }
+          if (!doesEntityNameExist(data.location.tx.name)) {
+            addPoint(
+              data.location.tx.latitude,
+              data.location.tx.longitude,
+              data.location.tx.altitude,
+              data.location.tx.name,
+              style_radar.color,
+              style_radar.pointSize,
+              style_radar.type,
+              style_radar.timestamp
+            );
+          }
+        })
+        .catch(error => {
+          console.error('Error during fetch:', error);
+        });
+    });
+  }
 
   // resolve ADS-B truth URL through our proxy to avoid direct client-to-node requests
   var adsb_param = new URLSearchParams(window.location.search).get('adsb');
@@ -433,6 +565,16 @@ map.on('load', function () {
   // initialise settings button text (replaces inline <script> in HTML)
   var btnUnit = document.getElementById('btn-alt-unit');
   if (btnUnit) btnUnit.textContent = 'Unit: ' + (altUnit === 'm' ? 'metres' : 'feet');
+
+  // Sync settings popup inputs to persisted localStorage values
+  var inpMin = document.getElementById('input-min-radar-ellipsoids');
+  if (inpMin) inpMin.value = minRadarEllipsoids;
+  var inpFade = document.getElementById('input-ellipsoid-fade');
+  if (inpFade) inpFade.value = ellipsoidFadeTime;
+  var cbShowCoop = document.getElementById('input-show-cooperative');
+  if (cbShowCoop) cbShowCoop.checked = showCooperativeTargets;
+  var cbLocaliseCoop = document.getElementById('input-localise-cooperative');
+  if (cbLocaliseCoop) cbLocaliseCoop.checked = localiseCooperativeTargets;
 
   // replace static legend labels with proportionally-positioned ones
   updateLegendLabels();
@@ -461,7 +603,7 @@ map.on('load', function () {
  *   point was added.
  * @returns {object} The GeoJSON Feature representing the added point.
  */
-function addPoint(latitude, longitude, altitude, pointName, pointColor, pointSize, type, timestamp) {
+function addPoint(latitude, longitude, altitude, pointName, pointColor, pointSize, type, timestamp, strokeWidth, strokeColor) {
   const id = type + '_' + timestamp + '_' + Math.random().toString(36).substring(2, 11);
   const feature = {
     type: 'Feature',
@@ -476,6 +618,8 @@ function addPoint(latitude, longitude, altitude, pointName, pointColor, pointSiz
       size: pointSize,
       opacity: 1.0,
       altitude: altitude,
+      strokeWidth: strokeWidth || 0,
+      strokeColor: strokeColor || 'rgba(0,0,0,0)',
     },
   };
   pointFeatures.push(feature);

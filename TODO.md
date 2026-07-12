@@ -13,15 +13,15 @@ These are confirmed defects that silently produce wrong results today.
 - **Files**: `event/algorithm/localisation/EllipseParametric.py`, `EllipsoidParametric.py`
 - **Problem**: `event.py` creates instances with `method="min"` but `process()` checks `elif self.method == "minimum":`. All `min` variants silently fall through to the `else` branch and return an empty dict on every call. Both `ellipse-parametric-min` and `ellipsoid-parametric-min` are completely broken.
 - **Fix**: Change the `elif` check in both files from `"minimum"` to `"min"`, OR change the constructor call in `event.py` to pass `"minimum"`.
-- [ ] Fix string mismatch in `EllipseParametric.process()`
-- [ ] Fix string mismatch in `EllipsoidParametric.process()`
+- [x] Fix string mismatch in `EllipseParametric.process()`
+- [x] Fix string mismatch in `EllipsoidParametric.process()`
 - [ ] Add unit test: construct with `"min"` and verify non-empty output
 
 ### A2 — `ecef2lla` wraps longitude to `[0°, 360°)` instead of `[-180°, 180°)`
 - **File**: `event/algorithm/geometry/Geometry.py`
 - **Problem**: `lon = lon % (2 * math.pi)` maps all longitudes to `[0, 2π)`. The configured centre is London (`lon: -0.1278°`). Any target west of the prime meridian returns a longitude of ~359.87° instead of ~-0.13°. This breaks map display and accuracy comparison vs ADS-B truth for the entire western hemisphere.
 - **Fix**: Change wrapping to `lon = (lon + math.pi) % (2 * math.pi) - math.pi` to give `(-π, π]`.
-- [ ] Fix `ecef2lla` longitude wrapping
+- [x] Fix `ecef2lla` longitude wrapping
 - [ ] Update `TestGeometry.py` to add a western-hemisphere test case (e.g. London)
 - [ ] Verify map frontend correctly handles negative longitudes
 
@@ -29,20 +29,20 @@ These are confirmed defects that silently produce wrong results today.
 - **Files**: `EllipseParametric.py`, `EllipsoidParametric.py`
 - **Problem**: Both classes maintain a `self.ellipsoids = []` list and attempt a lookup on each call, but the newly created `Ellipsoid` is never appended. The cache is dead code — every frame re-constructs every `Ellipsoid` from scratch including redundant coordinate transforms.
 - **Fix**: After creating an `ellipsoid`, append it to `self.ellipsoids`.
-- [ ] Fix cache in `EllipseParametric.process()`
-- [ ] Fix cache in `EllipsoidParametric.process()`
+- [x] Fix cache in `EllipseParametric.process()`
+- [x] Fix cache in `EllipsoidParametric.process()`
 
 ### A4 — `AdsbAssociator` mutates shared radar detection data in-place
 - **File**: `event/algorithm/associator/AdsbAssociator.py`
 - **Problem**: `radar_detections['delay'][i] = delay` overwrites the shared `radar_dict` that is passed to all API items and all targets in the same epoch. If two API items reference the same radar, or if a radar has multiple targets, the second read gets already-extrapolated (possibly double-extrapolated) delays.
 - **Fix**: Deep-copy `radar_detections` at the start of `process_1_radar()` before applying extrapolation. Or work with a local copy of the delay list.
-- [ ] Add `import copy` and apply `copy.deepcopy` on the detections before mutation
+- [x] Add `import copy` and apply `copy.deepcopy` on the detections before mutation
 
 ### A5 — `EllipseParametric.sample()` uses hardcoded 100m altitude
 - **File**: `event/algorithm/localisation/EllipseParametric.py`
 - **Problem**: `Geometry.enu2ecef(r_1[i][0], r_1[i][1], 100, ...)` samples the 2D ellipse at 100m altitude. Display later forces altitude to 0. This introduces a small but systematic horizontal position error in the ECEF→distance comparisons.
 - **Fix**: Change `100` to `0` (or to the midpoint altitude of the ellipse for improved accuracy).
-- [ ] Fix hardcoded altitude in `EllipseParametric.sample()`
+- [x] Fix hardcoded altitude in `EllipseParametric.sample()`
 
 ---
 
@@ -128,12 +128,12 @@ These are confirmed defects that silently produce wrong results today.
 - **State**: `[x, y, z, ẋ, ẏ, ż]` in ECEF
 - **Measurement**: bistatic range per radar (non-linear)
 - **Benefits**: Reduced position jitter, velocity readout, track continuity through short gaps.
-- [ ] Create `event/algorithm/tracker/EKFTracker.py`
-- [ ] Implement predict (constant-velocity) and update (bistatic range) steps
-- [ ] Implement track initiation (2-frame confirmation) and deletion
-- [ ] Thread-safe track store per API config item
+- [x] Create `event/algorithm/tracker/EKFTracker.py`
+- [x] Implement predict (constant-velocity) and update (bistatic range) steps
+- [x] Implement track initiation (2-frame confirmation) and deletion
+- [ ] Thread-safe track store per API config item (JIPDA handles this)
 - [ ] Add Doppler as secondary measurement (see C3)
-- [ ] Wire into event loop
+- [x] Wire into event loop
 - [ ] Add simulation-based unit tests
 
 ### C3 — Use Doppler measurements in localisation
@@ -250,9 +250,9 @@ These are confirmed defects that silently produce wrong results today.
 - **Problem**: The only associator requires external ADS-B truth via adsb2dd. Targets not broadcasting ADS-B (military aircraft, general aviation without transponder, drones) are completely invisible to the system.
 - **Key finding**: The ADS-B dependency is **entirely in the association layer**. Every localisation algorithm (`EllipseParametric`, `EllipsoidParametric`, `SphericalIntersection`) consumes `{id: [{radar, delay, doppler}]}` and is agnostic to how that dict was populated. A blind associator producing the same schema requires **zero changes** to any localisation code.
 - **Note**: Mentioned in README Future Work. See Phase F below for the full research-backed implementation plan.
-- [ ] Implement Phase F1 `GeometricAssociator` (see Phase F)
-- [ ] Add `associate.geometric` config block
-- [ ] Wire into `event.py` and `api.py` alongside existing `adsb-associator`
+- [x] Implement Phase F1 `GeometricAssociator` (see Phase F)
+- [x] Add `associate.geometric` config block
+- [x] Wire into `event.py` and `api.py` alongside existing `adsb-associator`
 
 ---
 
@@ -413,13 +413,13 @@ Both fields co-exist. `detections_localised` continues to hold ADS-B-associated 
 
 **Implementation plan:**
 
-1. [ ] Add `noncooperative` config block to `config/config.yml`
-2. [ ] In `event/event.py`: after `localised_dets = localisation.process(...)`, add a second block that runs `GeometricAssociator` + localisation if `noncooperative.enabled`
-3. [ ] Implement cross-reference logic: for each blind target, find nearest ADS-B target in ECEF; if distance > `match_distance`, flag as non-cooperative
-4. [ ] Extend API output schema: add `detections_noncooperative` and `cooperative_count` / `noncooperative_count`
-5. [ ] Add `noncooperative` field to the ZMQ message sent from `event` to `api`
-6. [ ] Update `api/api.py` to pass `detections_noncooperative` through to frontend
-7. [ ] Update `api/map/main.js` to render non-cooperative targets with distinct styling
+1. [x] Add `noncooperative` config block to `config/config.yml`
+2. [x] In `event/event.py`: after `localised_dets = localisation.process(...)`, add a second block that runs `GeometricAssociator` + localisation if `noncooperative.enabled`
+3. [x] Implement cross-reference logic: for each blind target, find nearest ADS-B target in ECEF; if distance > `match_distance`, flag as non-cooperative
+4. [x] Extend API output schema: add `detections_noncooperative` and `cooperative_count` / `noncooperative_count`
+5. [x] Add `noncooperative` field to the ZMQ message sent from `event` to `api`
+6. [x] Update `api/api.py` to pass `detections_noncooperative` through to frontend
+7. [x] Update `api/map/main.js` to render non-cooperative targets with distinct styling
 8. [ ] Add unit test: synthetic 3-radar epoch with 1 ADS-B target + 1 non-cooperative target → both detected and correctly classified
 9. [ ] Add unit test: `noncooperative.enabled: false` → no change to existing output
 10. [ ] Add unit test: `match_distance: 1` (very tight) → no false-positive classification drift
@@ -568,15 +568,15 @@ elif item["associator"] == "geometric-associator":
     associated_dets = geometricAssociator.process(radar_list, radar_data, timestamp)
 ```
 
-- [ ] Create `event/algorithm/associator/GeometricAssociator.py`
-- [ ] Implement N-tuple enumeration using `itertools.product`
-- [ ] Implement vectorised geometric intersection test (reuse `Ellipsoid` + `Geometry`)
-- [ ] Implement Doppler sign-consistency post-filter
+- [x] Create `event/algorithm/associator/GeometricAssociator.py`
+- [x] Implement N-tuple enumeration using `itertools.product`
+- [x] Implement vectorised geometric intersection test (reuse `Ellipsoid` + `Geometry`)
+- [x] Implement Doppler sign-consistency post-filter
 - [ ] Implement optional full Doppler ratio post-filter
-- [ ] Implement candidate deduplication
-- [ ] Add `associate.geometric` block to `config/config.yml`
-- [ ] Wire into `event/event.py` and `api/api.py`
-- [ ] Add `max_detections` guard to skip enumeration in high-clutter epochs
+- [x] Implement candidate deduplication
+- [x] Add `associate.geometric` block to `config/config.yml`
+- [x] Wire into `event/event.py` and `api/api.py`
+- [x] Add `max_detections` guard to skip enumeration in high-clutter epochs
 - [ ] Unit test: 3-radar synthetic geometry, 1 real target + 3 false detections per radar → exactly 1 output target
 - [ ] Unit test: empty detection lists → empty output `{}`
 - [ ] Unit test: output schema is identical to `AdsbAssociator` format
@@ -660,13 +660,13 @@ The joint measurement covariance is block-diagonal over radars (independent nois
 }
 ```
 
-- [ ] Create `event/algorithm/tracker/JPDATracker.py` implementing JIPDA (Musicki & Evans, 2004)
-- [ ] Implement bistatic range measurement model and Jacobian H_i for N radars
-- [ ] Implement track initiation (2-scan M/N confirmation from `GeometricAssociator` output)
-- [ ] Implement JIPDA predict/update cycle
-- [ ] Implement track deletion via `P_exist` threshold (configurable, default 0.1)
+- [x] Create `event/algorithm/tracker/JPDATracker.py` implementing JIPDA (Musicki & Evans, 2004)
+- [x] Implement bistatic range measurement model and Jacobian H_i for N radars
+- [x] Implement track initiation (2-scan M/N confirmation from `GeometricAssociator` output)
+- [x] Implement JIPDA predict/update cycle
+- [x] Implement track deletion via `P_exist` threshold (configurable, default 0.1)
 - [ ] Per-client thread-safe track store (avoid cross-contaminating independent API consumers)
-- [ ] Expose `P_exist`, velocity `[vx, vy, vz]`, `age_epochs` in output schema (optional fields — backward compatible)
+- [x] Expose `P_exist`, velocity `[vx, vy, vz]`, `age_epochs` in output schema (optional fields — backward compatible)
 - [ ] Unit test: 10-epoch simulated trajectory, verify track maintained through 2-epoch detection gap
 - [ ] Unit test: track terminated after 5 consecutive missed detections
 

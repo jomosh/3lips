@@ -57,7 +57,7 @@ for radar in radar_data:
     servers.append({'name': radar['name'], 'url': radar['url']})
 
 associators = [
-  {"name": "ADSB Associator", "id": "adsb-associator"}
+  {"name": "ADSB Associator", "id": "adsb-associator"},
 ]
 
 localisations = [
@@ -76,7 +76,6 @@ adsbs = [
 # store valid ids
 valid = {}
 valid['servers'] = [item['url'] for item in servers]
-valid['associators'] = [item['id'] for item in associators]
 valid['localisations'] = [item['id'] for item in localisations]
 valid['adsbs'] = [item['url'] for item in adsbs]
 
@@ -90,7 +89,7 @@ message_api_request = Message('event', 6969)
 @app.route("/")
 def index():
   return render_template("index.html", servers=servers, \
-  associators=associators, localisations=localisations, adsbs=adsbs)
+  localisations=localisations, adsbs=adsbs)
 
 # serve static files from the /app/public folder
 @app.route('/public/<path:file>')
@@ -104,13 +103,10 @@ def api():
   api = request.query_string.decode('utf-8')
   # input protection
   servers_api = request.args.getlist('server')
-  associators_api = request.args.getlist('associator')
   localisations_api = request.args.getlist('localisation')
   adsbs_api = request.args.getlist('adsb')
   if not all(item in valid['servers'] for item in servers_api):
     return 'Invalid server'
-  if not all(item in valid['associators'] for item in associators_api):
-    return 'Invalid associator'
   if not all(item in valid['localisations'] for item in localisations_api):
     return 'Invalid localisation'
   if not all(item in valid['adsbs'] for item in adsbs_api):
@@ -478,6 +474,12 @@ def _handle_proxy_errors(correlation_id: str, endpoint: str,
 def proxy_config():
   """Proxy radar /api/config endpoints to avoid direct browser-to-node requests."""
   correlation_id = str(uuid.uuid4())[:8]
+
+  # Privacy gate: block when radar site locations are hidden
+  show_sites = config_data.get('map', {}).get('show_radar_sites', True)
+  if not show_sites:
+    return _make_proxy_error(correlation_id,
+                             "Radar site locations are not publicly available", 403)
 
   # Rate limiting
   client_ip = _get_client_ip()

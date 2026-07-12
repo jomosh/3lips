@@ -31,6 +31,7 @@ This is a **signal-processing and sensor fusion project**, not a general web app
 │   │   ├── geometry/       # WGS-84 coordinate transforms (Geometry.py)
 │   │   ├── localisation/   # Position fix algorithms
 │   │   └── truth/          # ADS-B truth fetching (AdsbTruth.py)
+│   │   └── tracker/        # EKF + JIPDA multi-target tracking
 │   └── data/
 │       └── Ellipsoid.py    # Bistatic ellipsoid geometry
 ├── test/                   # Unit tests (run from event/ directory)
@@ -50,10 +51,14 @@ blah2 radar nodes (HTTP)          ADS-B truth (tar1090 HTTP)
 event/event.py  ─── ZMQ (port 6969) ───  api/api.py (Flask)
    │                                          │
    ├─ algorithm/associator/AdsbAssociator     └─ map/ (MapLibre GL JS frontend)
+   ├─ algorithm/associator/GeometricAssociator
    ├─ algorithm/localisation/
    │   ├─ EllipseParametric.py   (2D, parametric sampling)
    │   ├─ EllipsoidParametric.py (3D, parametric sampling)
    │   └─ SphericalIntersection.py (closed-form, shared TX/RX only)
+   ├─ algorithm/tracker/
+   │   ├─ EKFTracker.py
+   │   └─ JIPDATracker.py
    ├─ algorithm/geometry/Geometry.py  (WGS-84 coordinate transforms)
    ├─ algorithm/truth/AdsbTruth.py
    └─ data/Ellipsoid.py
@@ -171,6 +176,17 @@ def process(self, assoc_detections, radar_data) -> dict:
 - The `method` constructor argument uses short strings: `"mean"` or `"min"`.
 - Never check for `"minimum"` — the event loop passes `"min"`.
 
+### Associator Class Interface
+
+Every associator must implement:
+
+```python
+def process(self, radar_list: list, radar_data: dict, timestamp: int) -> dict:
+    # Returns: {target_id: [{radar, delay, doppler}]}
+```
+
+The AdsbAssociator is always the primary associator. The GeometricAssociator runs as a parallel blind path when `noncooperative.enabled` is true.
+
 ### API Output Schema
 
 ```json
@@ -185,10 +201,18 @@ def process(self, assoc_detections, radar_data) -> dict:
   "truth": { "hex": { "lat": ..., "lon": ..., "alt": ..., "flight": "..." } },
   "detections_associated": { "hex": [{ "radar": "...", "delay": ..., "doppler": ... }] },
   "detections_localised": { "hex": { "points": [[lat, lon, alt]] } },
-  "ellipsoids": { "radar": [[lat, lon, alt], ...] },
+  "detections_noncooperative": { "track_id": { "points": [[lat, lon, alt]] } },
+  "ellipsoids": {
+    "hex-radarName": [[lat, lon, alt], ...],
+    "nc_synthId-radarName": [[lat, lon, alt], ...]
+  },
   "time": 0.123
 }
 ```
+
+- Cooperative ellipsoids use key format `"targetId-radarName"`.
+- Non-cooperative (blind) ellipsoids use key format `"nc_targetId-radarName"`.
+- The `nc_` prefix is used by the frontend to filter ellipsoid visibility via the "Localise cooperative targets" toggle.
 
 ### Event Loop Lifecycle
 
@@ -309,11 +333,38 @@ d = np.linalg.norm(pts - np.array([x, y, z]), axis=1)
 | `ellipsoid-parametric-mean` | Sample 3D ellipsoids, find mean intersection | ≥ 3 | Yes | Slow | Provides altitude estimate. CPU intensive. |
 | `ellipsoid-parametric-min` | Same, but report minimum-distance intersection point | ≥ 3 | Yes | Slow | Best 3D accuracy of parametric methods. |
 | `spherical-intersection` | Closed-form algebraic solution | ≥ 3 | Yes | Fast | **Requires all radars to share a common TX or common RX.** |
-| `tdoa-least-squares` | (Planned) Non-linear least-squares using scipy | ≥ 2 | Yes | Fast | Removes sampling noise, gives covariance estimate. |
 
 ---
 
-## 7. Deployment Topologies
+## 7. Non-Cooperative Target Pipeline
+
+The Geometric Associator + JIPDA pipeline runs alongside the AdsbAssociator as a blind (ADS-B-free) path:
+
+1. **GeometricAssociator** finds blind candidates by cross-radar enumeration (requires ≥1 radar; ghost suppression requires ≥3).
+2. **JIPDATracker** estimates positions (gated on ≥3 radars with detection data for a reliable 3D fix).
+3. **Cross-reference**: each blind target compared to nearest ADS-B target in ECEF. Distance > `noncooperative.match_distance` → classified as non-cooperative.
+4. Non-cooperative ellipsoids get `nc_` key prefix; detection dots get yellow colour + white border.
+
+### Non-Cooperative Visual Distinction
+
+- Detection dots: yellow `rgba(255,200,0,0.75)` + 3px white border
+- Ellipsoid points: same rose/magenta hue + subtle 1px semi-transparent white border
+- Type `"noncooperative"` for detection dots, `"ellipsoids-noncoop"` for ellipsoid points
+
+### Frontend Toggle Behavior
+
+Two independent settings:
+
+| Toggle | Controls | Default |
+|---|---|---|
+| **Localise cooperative targets** | Cooperative (ADS-B-matched) ellipsoids + detection dots | ☑ checked |
+| **Show cooperative targets** | Raw ADS-B truth overlay from tar1090 | ☑ checked |
+
+Non-cooperative targets are ALWAYS shown regardless of toggles.
+
+---
+
+## 8. Deployment Topologies
 
 ### Topology A — Multiple RX, Shared TX (standard PCL)
 - One transmitter of opportunity; multiple independent receivers.
@@ -356,7 +407,7 @@ d = np.linalg.norm(pts - np.array([x, y, z]), axis=1)
 
 ---
 
-## 8. Testing Rules
+## 9. Testing Rules
 
 ### Test Location and Structure
 
@@ -412,7 +463,7 @@ self.assertAlmostEqual(result[2], expected_alt, delta=1000) # alt tolerance 1km
 
 ---
 
-## 9. Known Issues — Never Re-introduce
+## 10. Known Issues — Never Re-introduce
 
 1. **Longitude wrapping**: Do **not** use `lon % (2 * math.pi)` — this produces wrong longitudes for the western hemisphere. Always use `(lon + math.pi) % (2 * math.pi) - math.pi`.
 
@@ -428,9 +479,13 @@ self.assertAlmostEqual(result[2], expected_alt, delta=1000) # alt tolerance 1km
 
 7. **SX condition number**: Do not use `np.linalg.inv(S.T @ S) @ S.T` without checking condition number first. Use `np.linalg.lstsq(S, ..., rcond=None)` instead (TODO D1).
 
+8. **GeometricAssociator unit mismatch**: The `_sample_ellipsoid` method must convert bistatic range from milliseconds to metres before adding to `ellipsoid.distance`. Missing this conversion produces ellipsoids ~7× too small (fixed June 2026).
+
+9. **GeometricAssociator `.index()` on duplicate detections**: Enumerate detection indices during candidate generation instead of using `list.index()` which returns the wrong index for duplicate delay/doppler pairs (fixed June 2026).
+
 ---
 
-## 10. When Acting as a Radar Engineer
+## 11. When Acting as a Radar Engineer
 
 When asked to implement, debug, or evaluate localisation algorithms, bistatic geometry, coordinate transforms, or signal-processing features:
 
@@ -454,7 +509,7 @@ When asked to implement, debug, or evaluate localisation algorithms, bistatic ge
 
 ---
 
-## 11. When Acting as an Algorithm Researcher
+## 12. When Acting as an Algorithm Researcher
 
 When asked to research localisation algorithms, compare methods from literature, evaluate a new approach before implementation:
 
@@ -474,7 +529,7 @@ When asked to research localisation algorithms, compare methods from literature,
 
 ---
 
-## 12. When Acting as a Performance Analyst
+## 13. When Acting as a Performance Analyst
 
 When asked to profile Python code, benchmark localisation latency, vectorise loops with NumPy, add async HTTP, or diagnose slow event loop:
 
@@ -497,7 +552,7 @@ When asked to profile Python code, benchmark localisation latency, vectorise loo
 
 ---
 
-## 13. Workflow Templates
+## 14. Workflow Templates
 
 ### Add a Localisation Algorithm Test
 
@@ -573,7 +628,7 @@ When tasked to vectorise a slow function:
 
 ---
 
-## 14. Development Roadmap Reference
+## 15. Development Roadmap Reference
 
 **Primary planning document: `TODO.md`**
 

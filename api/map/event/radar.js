@@ -12,83 +12,133 @@ function event_radar() {
     })
     .then(data => {
 
-      if (!data["detections_localised"]) {
-        return;
-      }
+      // ---- ADS-B (cooperative) targets -----------------------------------
+      if (data["detections_localised"]) {
 
-      removeEntitiesOlderThanAndFade("detection", 10, 0.5);
+        // Check whether cooperative targets should be localised
+        var localiseCoop = (typeof window.localiseCooperativeTargets !== 'undefined')
+          ? window.localiseCooperativeTargets : true;
 
-      // Read truth data for flight/altitude lookup
-      var truth = data["truth"] || {};
+        if (localiseCoop) {
+          removeEntitiesOlderThanAndFade("detection", 10, 0.5);
 
-      // Track which hexes were seen this poll for label pruning
-      var seenHex = {};
+          // Read truth data for flight/altitude lookup
+          var truth = data["truth"] || {};
 
-      for (const key in data["detections_localised"]) {
-        if (data["detections_localised"].hasOwnProperty(key)) {
-          var hex = key;
-          var target = data["detections_localised"][key];
-          var points = target["points"];
+          // Track which hexes were seen this poll for label pruning
+          var seenHex = {};
 
-          // Determine altitude in METRES for colour coding:
-          //   - truth alt_baro is from ADS-B (feet) → convert to metres
-          //   - localised point altitude is geometric (already metres)
-          var alt_m = null;
-          var flight = null;
-          if (truth[hex]) {
-            if (truth[hex].alt_baro !== undefined && truth[hex].alt_baro !== null) {
-              // ADS-B barometric altitude is in feet — convert to metres
-              alt_m = truth[hex].alt_baro * 0.3048;
+          for (const key in data["detections_localised"]) {
+            if (data["detections_localised"].hasOwnProperty(key)) {
+              var hex = key;
+              var target = data["detections_localised"][key];
+              var points = target["points"];
+
+              // Determine altitude in METRES for colour coding:
+              //   - truth alt_baro is from ADS-B (feet) → convert to metres
+              //   - localised point altitude is geometric (already metres)
+              var alt_m = null;
+              var flight = null;
+              if (truth[hex]) {
+                if (truth[hex].alt_baro !== undefined && truth[hex].alt_baro !== null) {
+                  // ADS-B barometric altitude is in feet — convert to metres
+                  alt_m = truth[hex].alt_baro * 0.3048;
+                }
+                flight = truth[hex].flight || null;
+              }
+              // Fallback to geometric altitude from the first localised point (already metres)
+              if ((alt_m === null || alt_m === undefined) && points.length > 0) {
+                alt_m = points[0][2];
+              }
+              if (alt_m === null || alt_m === undefined) {
+                alt_m = 0;
+              }
+
+              var color = getAltitudeColor(alt_m);
+
+              for (var i = 0; i < points.length; i++) {
+                addPoint(
+                  points[i][0],
+                  points[i][1],
+                  points[i][2],
+                  hex,
+                  color,
+                  style_point.pointSize,
+                  style_point.type,
+                  Date.now()
+                );
+              }
+
+              // Build label text: callsign on top line, formatted altitude on second line
+              var namePart;
+              if (flight && flight.trim() !== '') {
+                namePart = sanitizeLabel(flight.trim());
+              } else {
+                // Use short hex (last 4 chars) for cleaner display
+                namePart = hex.length > 4 ? hex.substring(hex.length - 4) : hex;
+              }
+              var labelText = namePart + '\n' + formatAltitude(alt_m);
+
+              // Place label on the latest point (last in the array)
+              var latestPt = points[points.length - 1];
+              updateTargetLabel("detection", hex, latestPt[0], latestPt[1], labelText, color);
+
+              seenHex[hex] = true;
             }
-            flight = truth[hex].flight || null;
-          }
-          // Fallback to geometric altitude from the first localised point (already metres)
-          if ((alt_m === null || alt_m === undefined) && points.length > 0) {
-            alt_m = points[0][2];
-          }
-          if (alt_m === null || alt_m === undefined) {
-            alt_m = 0;
           }
 
-          var color = getAltitudeColor(alt_m);
-
-          for (var i = 0; i < points.length; i++) {
-            addPoint(
-              points[i][0],
-              points[i][1],
-              points[i][2],
-              hex,
-              color,
-              style_point.pointSize,
-              style_point.type,
-              Date.now()
-            );
+          // Remove labels for targets that are no longer localised
+          for (var id in _targetLabelFeatures) {
+            if (_targetLabelFeatures.hasOwnProperty(id) && id.indexOf('detection_') === 0) {
+              var storedHex = id.substring(11);
+              if (!seenHex[storedHex]) {
+                removeTargetLabel("detection", storedHex);
+              }
+            }
           }
-
-          // Build label text: callsign on top line, formatted altitude on second line
-          var namePart;
-          if (flight && flight.trim() !== '') {
-            namePart = sanitizeLabel(flight.trim());
-          } else {
-            // Use short hex (last 4 chars) for cleaner display
-            namePart = hex.length > 4 ? hex.substring(hex.length - 4) : hex;
-          }
-          var labelText = namePart + '\n' + formatAltitude(alt_m);
-
-          // Place label on the latest point (last in the array)
-          var latestPt = points[points.length - 1];
-          updateTargetLabel("detection", hex, latestPt[0], latestPt[1], labelText, color);
-
-          seenHex[hex] = true;
+        } else {
+          // Cooperative localisation disabled — clear cooperative detection
+          // points and labels.  Non-cooperative targets are unaffected.
+          removeEntitiesByType("detection");
+          clearTargetLabels("detection");
         }
       }
 
-      // Remove labels for targets that are no longer localised
-      for (var id in _targetLabelFeatures) {
-        if (_targetLabelFeatures.hasOwnProperty(id) && id.indexOf('detection_') === 0) {
-          var storedHex = id.substring(11); // strip "detection_"
-          if (!seenHex[storedHex]) {
-            removeTargetLabel("detection", storedHex);
+      // ---- Non-cooperative (blah2-only) targets --------------------------
+      if (data["detections_noncooperative"]) {
+        removeEntitiesOlderThanAndFade("noncooperative", 10, 0.5);
+
+        for (const key in data["detections_noncooperative"]) {
+          if (data["detections_noncooperative"].hasOwnProperty(key)) {
+            var ncoop = data["detections_noncooperative"][key];
+            var pts = ncoop["points"];
+            if (!pts || pts.length === 0) continue;
+
+            // Altitude from geometric localisation (already metres)
+            var ncoopAlt = pts[0][2] || 0;
+
+            // Fixed yellow/gold colour — distinct from altitude palette
+            var ncoopColor = 'rgba(255, 200, 0, 0.75)';
+
+            for (var j = 0; j < pts.length; j++) {
+              addPoint(
+                pts[j][0],
+                pts[j][1],
+                pts[j][2],
+                key,
+                ncoopColor,
+                style_point.pointSize,
+                "noncooperative",
+                Date.now(),
+                3,
+                '#ffffff'
+              );
+            }
+
+            // Label: "Non-coop" instead of callsign
+            var labelText = 'Non-coop\n' + formatAltitude(ncoopAlt);
+            var latestPt = pts[pts.length - 1];
+            updateTargetLabel("noncoop", key, latestPt[0], latestPt[1], labelText, ncoopColor);
           }
         }
       }
@@ -105,7 +155,6 @@ function event_radar() {
 }
 
 var style_point = {};
-style_point.color = 'rgba(0, 255, 0, 1.0)';
 style_point.pointSize = 16;
 style_point.type = "detection";
 style_point.timestamp = Date.now();
