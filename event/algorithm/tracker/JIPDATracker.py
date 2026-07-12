@@ -22,7 +22,6 @@ References:
 """
 
 import math
-from scipy.stats import chi2
 from algorithm.geometry.Geometry import Geometry
 
 
