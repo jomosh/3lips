@@ -91,9 +91,6 @@ class JIPDATracker:
         if n_tracks == 0 and n_cands == 0:
             return {}
 
-        # Build radar config list for measurement extraction
-        radar_names = list(radar_data.keys())
-
         # Gate: valid[i][j] = True if candidate j gates with track i
         valid = [[False] * n_cands for _ in range(n_tracks)]
         nis_matrix = [[float('inf')] * n_cands for _ in range(n_tracks)]

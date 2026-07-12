@@ -18,7 +18,6 @@ References:
 """
 
 import numpy as np
-import math
 
 
 class EKFTracker:
