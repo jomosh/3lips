@@ -76,10 +76,6 @@ adsbs = [
 # store valid ids
 valid = {}
 valid['servers'] = [item['url'] for item in servers]
-valid['associators'] = [item['id'] for item in associators]
-# The AdsbAssociator is always used as the primary associator in the event loop.
-# The Geometric Associator runs as a parallel blind path when
-# config noncooperative.enabled is true.
 valid['localisations'] = [item['id'] for item in localisations]
 valid['adsbs'] = [item['url'] for item in adsbs]
 

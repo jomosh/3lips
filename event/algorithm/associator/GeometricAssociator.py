@@ -217,7 +217,7 @@ class GeometricAssociator:
             samples at uniform angular spacing, converts to ECEF, filters
             above-ground points.
         @param ellipsoid (Ellipsoid): Pre-computed ellipsoid geometry.
-        @param bistatic_range_ms (float): Bistatic range in millimetres (same
+        @param bistatic_range_ms (float): Bistatic range in milliseconds (same
             convention as the existing sample() calls).
         @param n (int): Number of azimuth samples.
         @return list: ECEF [x, y, z] points that are above ground.
