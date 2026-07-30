@@ -1,4 +1,4 @@
-# 3lips
+# 3lips bootleg
 
 Target localisation for multi-static radar using ellipse intersections. Not a dating app.
 
