@@ -112,7 +112,11 @@ async def _get_radar_configs(radar_names):
     results = await asyncio.gather(*tasks)
     async with _radar_config_cache_lock:
       for name, result in zip(missing, results):
-        _radar_config_cache[name] = result
+        # Only cache successful fetches — None on failure so the next
+        # epoch retries.  Storing None would poison the cache until the
+        # background refresh runs (up to 60 s later).
+        if result is not None:
+          _radar_config_cache[name] = result
 
   return {name: _radar_config_cache.get(name) for name in radar_names}
 
@@ -215,6 +219,15 @@ async def event():
 
   truth_adsb = dict(zip(adsb_urls, truth_results))
 
+  # Diagnostic: log what each radar returned
+  status_parts = []
+  for name in radar_names:
+    rd = radar_dict[name]
+    det_ok = "OK" if rd["detection"] is not None else "None"
+    cfg_ok = "OK" if rd["config"] is not None else "None"
+    status_parts.append(f"{name} detection={det_ok} config={cfg_ok}")
+  print("Radar data: " + ", ".join(status_parts), flush=True)
+
   # ---- Phase 2: adsb2dd association (concurrent per radar internally) ----
   adsb_associated = await adsbAssociator.process_async(
     radar_names, radar_dict, timestamp, _session)
@@ -253,6 +266,20 @@ async def event():
       filtered = [d for d in det_list if d["radar"] in item["server"]]
       if filtered:
         associated_dets[hex_key] = filtered
+
+    # Check whether any radars in this item have valid detection data.
+    # If all detection fetches failed, no associator can produce output.
+    radars_with_data = sum(
+      1 for rn in item["server"]
+      if rn in radar_dict_item
+      and radar_dict_item[rn]["detection"] is not None
+      and radar_dict_item[rn]["config"] is not None
+    )
+    if radars_with_data == 0:
+      print(
+        f"WARNING: No radar detection data available for {item['server']} — "
+        "check radar connectivity (see 'Radar data:' log above)",
+        flush=True)
 
     # If ADS-B produced nothing (tar1090/adsb2dd down), fall back to
     # GeometricAssociator as the primary associator.
