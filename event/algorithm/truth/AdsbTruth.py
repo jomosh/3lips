@@ -14,13 +14,16 @@ class AdsbTruth:
     @details Uses truth data in delay-Doppler space from an tar1090 server.
     """
 
-    def __init__(self, seen_pos_limit):
+    def __init__(self, seen_pos_limit, request_timeout=1.0):
 
         """
         @brief Constructor for the AdsbTruth class.
+        @param seen_pos_limit (int): Max age of ADS-B position data (seconds).
+        @param request_timeout (float): Per-request HTTP timeout in seconds.
         """
 
         self.seen_pos_limit = seen_pos_limit
+        self.request_timeout = request_timeout
 
     def process(self, server, use_https):
 
@@ -76,7 +79,7 @@ class AdsbTruth:
         url = f'{scheme}://{server}/data/aircraft.json'
 
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=1)) as resp:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=self.request_timeout)) as resp:
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
         except Exception as e:

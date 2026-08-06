@@ -48,6 +48,15 @@ try:
   saveRetentionHours = config.get('3lips', {}).get('save_retention_hours', 24)
   tar1090Https = config['map']['tar1090_https']
   eventInterval = config.get('event', {}).get('interval', 1.0)
+  httpConfig = config.get('event', {}).get('http', {})
+  requestTimeout = httpConfig.get('request_timeout', 1.0)
+  connectTimeout = httpConfig.get('connect_timeout', 1.0)
+  totalTimeout = httpConfig.get('total_timeout', 5.0)
+  httpLimit = httpConfig.get('limit', 20)
+  httpLimitPerHost = httpConfig.get('limit_per_host', 5)
+  dnsCacheTtl = httpConfig.get('dns_cache_ttl', 300)
+  configRefreshInterval = config.get('event', {}).get('cache', {}).get('config_refresh_interval', 60)
+  distanceWindow = config.get('associate', {}).get('adsb', {}).get('distance_window', 10)
   geometricConfig = config.get('associate', {}).get('geometric', {})
   ekfConfig = config.get('tracker', {}).get('ekf', {})
   jipdaConfig = config.get('tracker', {}).get('jipda', {})
@@ -65,13 +74,13 @@ api = []
 
 # init config
 tDelete = tDelete
-adsbAssociator = AdsbAssociator(adsb2ddServer, adsb2ddHttps)
+adsbAssociator = AdsbAssociator(adsb2ddServer, adsb2ddHttps, requestTimeout, distanceWindow)
 ellipseParametricMean = EllipseParametric("mean", nSamplesEllipse, thresholdEllipse)
 ellipseParametricMin = EllipseParametric("min", nSamplesEllipse, thresholdEllipse)
 ellipsoidParametricMean = EllipsoidParametric("mean", nSamplesEllipsoid, thresholdEllipsoid)
 ellipsoidParametricMin = EllipsoidParametric("min", nSamplesEllipsoid, thresholdEllipsoid)
 sphericalIntersection = SphericalIntersection()
-adsbTruth = AdsbTruth(tDeleteAdsb)
+adsbTruth = AdsbTruth(tDeleteAdsb, requestTimeout)
 geometricAssociator = GeometricAssociator(geometricConfig)
 ekf = EKFTracker(ekfConfig)
 jipda = JIPDATracker(ekf, jipdaConfig)
@@ -80,15 +89,18 @@ saveFile = '/app/save/' + str(int(time.time())) + '.ndjson'
 # ---- Radar config cache ----
 _radar_config_cache = {}          # {radar_name: config_dict or None}
 _radar_config_cache_lock = asyncio.Lock()
-_CONFIG_REFRESH_INTERVAL = 60     # seconds between background config refreshes
+_CONFIG_REFRESH_INTERVAL = configRefreshInterval
 
 # Long-lived aiohttp session (set by main())
 _session = None
 
 
-async def _fetch_json(url, timeout=1.0):
-  """Fetch JSON from a URL using the shared session. Returns None on failure."""
+async def _fetch_json(url, timeout=None):
+  """Fetch JSON from a URL using the shared session. Returns None on failure.
+  If timeout is None, the configured request_timeout from config.yml is used."""
   global _session
+  if timeout is None:
+    timeout = requestTimeout
   try:
     async with _session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
       resp.raise_for_status()
@@ -425,12 +437,12 @@ async def main():
 
   # Create long-lived aiohttp session with connection pooling
   connector = aiohttp.TCPConnector(
-    limit=20,             # max concurrent connections
-    limit_per_host=5,     # max per host
-    ttl_dns_cache=300,    # DNS cache TTL (5 minutes)
+    limit=httpLimit,
+    limit_per_host=httpLimitPerHost,
+    ttl_dns_cache=dnsCacheTtl,
     force_close=False,    # allow keep-alive
   )
-  timeout = aiohttp.ClientTimeout(total=5, connect=1)
+  timeout = aiohttp.ClientTimeout(total=totalTimeout, connect=connectTimeout)
 
   async with aiohttp.ClientSession(
     connector=connector,

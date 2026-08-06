@@ -21,14 +21,20 @@ class AdsbAssociator:
   @todo Add adjustable window for associating truth/detections.
   """
 
-  def __init__(self, adsb2dd_server, adsb2dd_https):
+  def __init__(self, adsb2dd_server, adsb2dd_https,
+               request_timeout=1.0, distance_window=10):
 
     """
     @brief Constructor for the AdsbAssociator class.
+    @param request_timeout (float): Per-request HTTP timeout in seconds.
+    @param distance_window (float): Association window in normalised
+        delay-Doppler space.
     """
 
     self.adsb2dd_server = adsb2dd_server
     self.adsb2dd_https = adsb2dd_https
+    self.request_timeout = request_timeout
+    self.distance_window = distance_window
 
   def process(self, radar_list, radar_data, timestamp):
 
@@ -136,7 +142,7 @@ class AdsbAssociator:
     @brief Fetch JSON from adsb2dd endpoint. Returns None on failure.
     """
     try:
-      async with session.get(url, timeout=aiohttp.ClientTimeout(total=1)) as resp:
+      async with session.get(url, timeout=aiohttp.ClientTimeout(total=self.request_timeout)) as resp:
         resp.raise_for_status()
         return await resp.json(content_type=None)
     except Exception as e:
@@ -155,7 +161,6 @@ class AdsbAssociator:
     """
 
     assoc_detections = {}
-    distance_window = 10
 
     for aircraft in adsb_detections:
 
@@ -181,7 +186,7 @@ class AdsbAssociator:
             radar_detections['doppler']
           )
 
-          if distance < distance_window:
+          if distance < self.distance_window:
 
             assoc_detections[aircraft] = {
               'radar': radar,

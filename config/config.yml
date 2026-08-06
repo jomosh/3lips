@@ -11,6 +11,7 @@ associate:
     tDelete: 5
     adsb2dd: "adsb2dd.30hours.dev:49155"
     adsb2dd_https: false
+    distance_window: 10    # association window in normalised delay-Doppler space
   geometric:
     threshold: 500        # metres — spatial proximity for intersection test
     nSamples: 50          # ellipse samples per detection
@@ -68,7 +69,16 @@ map:
   tar1090_https: false
 
 event:
-  interval: 0.5  # seconds between backend polling cycles (was hardcoded 1.0)
+  interval: 0.5                    # seconds between backend polling cycles
+  http:
+    request_timeout: 1.0           # seconds — per-request timeout for radar/truth HTTP fetches
+    connect_timeout: 1.0           # seconds — TCP connect timeout
+    total_timeout: 5.0             # seconds — session-level safety net timeout
+    limit: 20                      # max concurrent connections across all hosts
+    limit_per_host: 5              # max concurrent connections to any single host
+    dns_cache_ttl: 300             # seconds — DNS cache TTL
+  cache:
+    config_refresh_interval: 60    # seconds between background radar config cache refreshes
 
 3lips:
   save: true
