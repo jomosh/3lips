@@ -78,7 +78,7 @@ class AdsbTruth:
         try:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=1)) as resp:
                 resp.raise_for_status()
-                data = await resp.json()
+                data = await resp.json(content_type=None)
         except Exception as e:
             print(f"Error fetching data from {url}: {e}")
             return {}

@@ -92,7 +92,7 @@ async def _fetch_json(url, timeout=1.0):
   try:
     async with _session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
       resp.raise_for_status()
-      return await resp.json()
+      return await resp.json(content_type=None)
   except Exception as e:
     print(f"Error fetching {url}: {e}")
     return None

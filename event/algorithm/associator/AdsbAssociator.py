@@ -138,7 +138,7 @@ class AdsbAssociator:
     try:
       async with session.get(url, timeout=aiohttp.ClientTimeout(total=1)) as resp:
         resp.raise_for_status()
-        return await resp.json()
+        return await resp.json(content_type=None)
     except Exception as e:
       print(f"Error fetching {url}: {e}")
       return None
