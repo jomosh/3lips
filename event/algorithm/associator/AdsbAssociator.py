@@ -3,6 +3,8 @@
 @author 30hours
 """
 
+import asyncio
+import aiohttp
 import requests
 import math
 
@@ -78,6 +80,68 @@ class AdsbAssociator:
     #output = {key: values for key, values in output.items() if len(values) > 1}
 
     return output
+
+  async def process_async(self, radar_list, radar_data, timestamp, session):
+    """
+    @brief Async variant: fires all per-radar adsb2dd HTTP calls concurrently
+    via asyncio.gather, then runs process_1_radar() locally on each result.
+    @param radar_list (list): List of radar names to associate.
+    @param radar_data (dict): Radar data keyed by radar name.
+    @param timestamp (int): Timestamp to compute delays at (ms).
+    @param session (aiohttp.ClientSession): Shared session for connection reuse.
+    @return dict: Associated detections by [hex][radar].
+    """
+    # Build (radar_name, url) pairs for all valid radars
+    fetch_radars = []
+    fetch_tasks = []
+
+    for radar in radar_list:
+      rd = radar_data.get(radar)
+      if rd is None or rd["config"] is None or rd["detection"] is None:
+        continue
+      url = self.generate_api_url(radar, rd)
+      fetch_radars.append(radar)
+      fetch_tasks.append(self._fetch_adsb2dd(session, url))
+
+    # Fire all adsb2dd HTTP calls concurrently
+    results = await asyncio.gather(*fetch_tasks, return_exceptions=True)
+
+    # Local CPU-bound association per radar
+    assoc_detections_radar = []
+    for radar, result in zip(fetch_radars, results):
+      if isinstance(result, Exception):
+        print(f"Error fetching adsb2dd for {radar}: {result}")
+        continue
+      if result is None:
+        continue
+      rd = radar_data[radar]
+      assoc_detections_radar.append(
+        self.process_1_radar(
+          radar, rd["detection"], result, timestamp,
+          rd["config"]["capture"]["fc"]))
+
+    # Merge per-radar results (same as synchronous process)
+    output = {}
+    for entry in assoc_detections_radar:
+      for key, value in entry.items():
+        if key not in output:
+          output[key] = [value]
+        else:
+          output[key].append(value)
+
+    return output
+
+  async def _fetch_adsb2dd(self, session, url):
+    """
+    @brief Fetch JSON from adsb2dd endpoint. Returns None on failure.
+    """
+    try:
+      async with session.get(url, timeout=aiohttp.ClientTimeout(total=1)) as resp:
+        resp.raise_for_status()
+        return await resp.json()
+    except Exception as e:
+      print(f"Error fetching {url}: {e}")
+      return None
 
   def process_1_radar(self, radar, radar_detections, adsb_detections, timestamp, fc):
 

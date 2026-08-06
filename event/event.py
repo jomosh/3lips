@@ -5,10 +5,9 @@
 """
 
 import asyncio
+import aiohttp
 import math
-import requests
 import threading
-import asyncio
 import time
 import copy
 import json
@@ -78,6 +77,62 @@ ekf = EKFTracker(ekfConfig)
 jipda = JIPDATracker(ekf, jipdaConfig)
 saveFile = '/app/save/' + str(int(time.time())) + '.ndjson'
 
+# ---- Radar config cache ----
+_radar_config_cache = {}          # {radar_name: config_dict or None}
+_radar_config_cache_lock = asyncio.Lock()
+_CONFIG_REFRESH_INTERVAL = 60     # seconds between background config refreshes
+
+# Long-lived aiohttp session (set by main())
+_session = None
+
+
+async def _fetch_json(url, timeout=1.0):
+  """Fetch JSON from a URL using the shared session. Returns None on failure."""
+  global _session
+  try:
+    async with _session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+      resp.raise_for_status()
+      return await resp.json()
+  except Exception as e:
+    print(f"Error fetching {url}: {e}")
+    return None
+
+
+async def _get_radar_configs(radar_names):
+  """Return cached configs for the given radar names.
+  Fetches on cache miss. All missing radars fetched concurrently.
+  Thread-safe via asyncio.Lock."""
+  # Determine which radars need fetching
+  missing = [n for n in radar_names
+             if n not in _radar_config_cache
+             or _radar_config_cache[n] is None]
+
+  if missing:
+    tasks = [_fetch_json(f"http://{name}/api/config") for name in missing]
+    results = await asyncio.gather(*tasks)
+    async with _radar_config_cache_lock:
+      for name, result in zip(missing, results):
+        _radar_config_cache[name] = result
+
+  return {name: _radar_config_cache.get(name) for name in radar_names}
+
+
+async def _background_config_refresh():
+  """Periodically refresh all cached radar configs (handles radar restarts)."""
+  while True:
+    await asyncio.sleep(_CONFIG_REFRESH_INTERVAL)
+    async with _radar_config_cache_lock:
+      names = list(_radar_config_cache.keys())
+    if not names:
+      continue
+    tasks = [_fetch_json(f"http://{name}/api/config") for name in names]
+    results = await asyncio.gather(*tasks)
+    async with _radar_config_cache_lock:
+      for name, result in zip(names, results):
+        if result is not None:
+          _radar_config_cache[name] = result
+
+
 def _sample_and_convert_ellipsoid(radar_config, radar_name, delay,
                                    localisation, n_display):
   """Sample an ellipsoid at the given bistatic delay and return
@@ -137,67 +192,44 @@ async def event():
       radar_names.append(radar)
   radar_names = list(set(radar_names))
 
-  # get detections all radar
-  radar_detections_url = [
-    "http://" + radar_name + "/api/detection" for radar_name in radar_names]
-  radar_detections = []
-  for url in radar_detections_url:
-    try:
-      response = requests.get(url, timeout=1)
-      response.raise_for_status()
-      data = response.json()
-      radar_detections.append(data)
-    except requests.exceptions.RequestException as e:
-      print(f"Error fetching data from {url}: {e}")
-      radar_detections.append(None)
+  # collect unique ADS-B truth URLs
+  adsb_urls = list(set(item["adsb"] for item in api_event))
 
-  # get config all radar
-  radar_config_url = [
-    "http://" + radar_name + "/api/config" for radar_name in radar_names]
-  radar_config = []
-  for url in radar_config_url:
-    try:
-      response = requests.get(url, timeout=1)
-      response.raise_for_status()
-      data = response.json()
-      radar_config.append(data)
-    except requests.exceptions.RequestException as e:
-      print(f"Error fetching data from {url}: {e}")
-      radar_config.append(None)
+  # ---- Phase 1: Concurrent I/O (detections + configs + ADS-B truth) ----
+  detection_results = await asyncio.gather(*[
+    _fetch_json(f"http://{name}/api/detection") for name in radar_names
+  ])
+  config_results = await _get_radar_configs(radar_names)
+  truth_results = await asyncio.gather(*[
+    adsbTruth.process_async(url, tar1090Https, _session)
+    for url in adsb_urls
+  ])
 
-  # store detections in dict
+  # Build radar_dict from Phase 1 results
   radar_dict = {}
-  for i in range(len(radar_names)):
-    radar_dict[radar_names[i]] = {
-      "detection": radar_detections[i],
-      "config": radar_config[i]
+  for i, name in enumerate(radar_names):
+    radar_dict[name] = {
+      "detection": detection_results[i],
+      "config": config_results.get(name)
     }
 
-  # store truth in dict
-  truth_adsb = {}
-  adsb_urls = []
-  for item in api_event:
-    adsb_urls.append(item["adsb"])
-  adsb_urls = list(set(adsb_urls))
-  for url in adsb_urls:
-    truth_adsb[url] = adsbTruth.process(url, tar1090Https)
+  truth_adsb = dict(zip(adsb_urls, truth_results))
 
-  # main processing
+  # ---- Phase 2: adsb2dd association (concurrent per radar internally) ----
+  adsb_associated = await adsbAssociator.process_async(
+    radar_names, radar_dict, timestamp, _session)
+
+  # ---- Processing (unchanged logic, now with ADS-B fallback) ----
   for item in api_event:
 
     start_time = time.time()
 
     # extract dict for item
-    radar_dict_item =  {
-      key: radar_dict[key] 
-      for key in item["server"] 
+    radar_dict_item = {
+      key: radar_dict[key]
+      for key in item["server"]
       if key in radar_dict
     }
-
-    # Primary associator is always AdsbAssociator (ADS‑B truth).
-    # GeometricAssociator runs as a parallel blind path when
-    # noncooperative.enabled is true (see below).
-    associator = adsbAssociator
 
     # localisation selection
     if item["localisation"] == "ellipse-parametric-mean":
@@ -214,8 +246,24 @@ async def event():
       print("Error: Localisation invalid.")
       return
 
-    # processing
-    associated_dets = associator.process(item["server"], radar_dict_item, timestamp)
+    # Filter ADS-B associations to only include radars in this item.
+    # adsb_associated is keyed by hex, with values [{radar, delay, doppler}, ...].
+    associated_dets = {}
+    for hex_key, det_list in adsb_associated.items():
+      filtered = [d for d in det_list if d["radar"] in item["server"]]
+      if filtered:
+        associated_dets[hex_key] = filtered
+
+    # If ADS-B produced nothing (tar1090/adsb2dd down), fall back to
+    # GeometricAssociator as the primary associator.
+    if not associated_dets:
+      print(
+        "ADS-B association returned no results — "
+        "falling back to GeometricAssociator",
+        flush=True)
+      associated_dets = geometricAssociator.process(
+        item["server"], radar_dict_item, timestamp)
+
     associated_dets_3_radars = {
       key: value
       for key, value in associated_dets.items()
@@ -224,21 +272,10 @@ async def event():
     if associated_dets_3_radars:
       print('Detections from 3 or more radars availble.')
       print(associated_dets_3_radars)
-    associated_dets_2_radars = {
-      key: value
-      for key, value in associated_dets.items()
-      if isinstance(value, list) and len(value) >= 2
-    }
+
     localised_dets = localisation.process(associated_dets_3_radars, radar_dict_item)
 
     # ---- Blind association + non-cooperative detection (F0+F1+C2+F3) -------
-    # The Geometric Associator + JIPDA pipeline always runs alongside the
-    # primary AdsbAssociator when noncooperative.enabled is true.  It finds
-    # blind candidates from radar data alone, tracks them, and classifies
-    # each as cooperative (near an ADS‑B target) or non‑cooperative (no
-    # ADS‑B match).  Non‑cooperative targets get "nc_" prefixed keys in
-    # the ellipsoids output and are always visible on the map regardless
-    # of the "Localise cooperative targets" frontend toggle.
     detections_noncooperative = {}
     blind_candidates = {}
     if noncoopEnabled:
@@ -247,10 +284,6 @@ async def event():
         item["server"], radar_dict_item, timestamp)
 
       if blind_candidates:
-        # Only run JIPDA with ≥3 radars — with 1-2 radars there is no
-        # unique 3D fix, so detection dots would appear at misleading
-        # TX-RX midpoint positions.  nc_ ellipsoids are still generated
-        # below (they correctly show all possible target locations).
         n_radars_available = sum(
           1 for rn in item["server"]
           if rn in radar_dict_item
@@ -267,7 +300,6 @@ async def event():
 
         # Cross-reference: classify blind targets vs ADS-B targets
         for track_id, track_data in tracked_blind.items():
-          # Skip tentative (unconfirmed) candidates
           if track_data.get('P_exist', 0) < 0.3:
             continue
           pts = track_data.get('points', [])
@@ -276,7 +308,6 @@ async def event():
           blind_ecef = Geometry.lla2ecef(pts[0][0], pts[0][1], pts[0][2])
           blind_ecef_arr = np.array(blind_ecef)
 
-          # Find nearest ADS-B target
           nearest_dist = float('inf')
           for hex_key, loc_data in localised_dets.items():
             adsb_pts = loc_data.get('points', [])
@@ -288,11 +319,9 @@ async def event():
             if dist < nearest_dist:
               nearest_dist = dist
 
-          # Non-cooperative if no ADS-B target within match_distance
           if nearest_dist > noncoopMatchDist:
             detections_noncooperative[track_id] = track_data
 
-    # ---- Output non-cooperative detections --------------------------------
     item["detections_noncooperative"] = detections_noncooperative
 
     if associated_dets:
@@ -315,14 +344,12 @@ async def event():
             item["localisation"] == "ellipse-parametric-min":
               for pt in points:
                 pt[2] = 0
-            # Compound key so each target gets its own set of ellipsoid points
             ellipsoids[key + "-" + radar["radar"]] = points
 
       # Also generate ellipsoids for blind (non-cooperative) targets
       if blind_candidates:
         for key in blind_candidates:
           for radar in blind_candidates[key]:
-            # Only generate if radar config is available
             if radar["radar"] not in radar_dict_item:
               continue
             if radar_dict_item[radar["radar"]] is None:
@@ -337,14 +364,13 @@ async def event():
             item["localisation"] == "ellipse-parametric-min":
               for pt in points:
                 pt[2] = 0
-            # Prefix "nc_" so blind-target ellipsoids don't collide with ADS-B keys
             ellipsoids["nc_" + key + "-" + radar["radar"]] = points
 
     stop_time = time.time()
 
     # output data to API
     item["timestamp_event"] = timestamp
-    item["truth"] = truth_adsb[item["adsb"]]
+    item["truth"] = truth_adsb.get(item["adsb"], {})
     item["detections_associated"] = associated_dets
     item["detections_localised"] = localised_dets
     item["ellipsoids"] = ellipsoids
@@ -368,10 +394,29 @@ async def event():
 
 # event loop
 async def main():
+  global _session
 
-  while True:
-    await event()
-    await asyncio.sleep(eventInterval)
+  # Create long-lived aiohttp session with connection pooling
+  connector = aiohttp.TCPConnector(
+    limit=20,             # max concurrent connections
+    limit_per_host=5,     # max per host
+    ttl_dns_cache=300,    # DNS cache TTL (5 minutes)
+    force_close=False,    # allow keep-alive
+  )
+  timeout = aiohttp.ClientTimeout(total=5, connect=1)
+
+  async with aiohttp.ClientSession(
+    connector=connector,
+    timeout=timeout
+  ) as session:
+    _session = session
+
+    # Start background config refresh
+    asyncio.create_task(_background_config_refresh())
+
+    while True:
+      await event()
+      await asyncio.sleep(eventInterval)
 
 def _cleanup_save_files(save_dir, retention_hours):
   """Delete .ndjson files older than retention_hours from save_dir."""

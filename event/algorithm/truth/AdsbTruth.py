@@ -4,6 +4,7 @@
 """
 
 import requests
+import aiohttp
 
 class AdsbTruth:
 
@@ -61,4 +62,38 @@ class AdsbTruth:
                         output[aircraft["hex"]]["flight"] = aircraft["flight"]
                         output[aircraft["hex"]]["timestamp"] = \
                           adsb["now"] - aircraft["seen_pos"]
+        return output
+
+    async def process_async(self, server, use_https, session):
+        """
+        @brief Async variant using a shared aiohttp ClientSession.
+        @param server (str): The tar1090 server to get truth from.
+        @param use_https (bool): Use HTTPS if True, HTTP if False.
+        @param session (aiohttp.ClientSession): Shared session for connection reuse.
+        @return dict: Aircraft truth data keyed by hex code, or {} on failure.
+        """
+        scheme = 'https' if use_https else 'http'
+        url = f'{scheme}://{server}/data/aircraft.json'
+
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=1)) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+        except Exception as e:
+            print(f"Error fetching data from {url}: {e}")
+            return {}
+
+        output = {}
+        for aircraft in data.get("aircraft", []):
+            if (aircraft.get("seen_pos") and
+                aircraft.get("alt_geom") and
+                aircraft.get("flight") and
+                aircraft.get("seen_pos") < self.seen_pos_limit):
+                output[aircraft["hex"]] = {
+                    "lat": aircraft["lat"],
+                    "lon": aircraft["lon"],
+                    "alt": aircraft["alt_geom"],
+                    "flight": aircraft["flight"],
+                    "timestamp": data["now"] - aircraft["seen_pos"]
+                }
         return output
