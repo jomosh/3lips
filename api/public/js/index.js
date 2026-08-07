@@ -41,13 +41,10 @@ document.getElementById('buttonMap').addEventListener('click', function () {
   // Get the form values
   var servers = document.querySelectorAll('.toggle-button.active');
   var localisation = document.querySelector('[name="localisation"]').value;
-  var adsb = document.querySelector('[name="adsb"]').value;
 
   // Construct the URL with the form values
-  // (associator is always adsb-associator; Geometric Associator runs as
-  // a parallel blind path when noncooperative.enabled is true.)
   var apiUrl = '?server=' + Array.from(servers).map(server => server.value).join('&server=');
-  var mapUrl = '/map/index.html' + apiUrl + '&associator=adsb-associator&localisation=' + localisation + '&adsb=' + adsb;
+  var mapUrl = '/map/index.html' + apiUrl + '&localisation=' + localisation;
 
   // Redirect to the constructed URL
   window.location.href = mapUrl;

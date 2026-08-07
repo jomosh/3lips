@@ -9,9 +9,6 @@ radar:
 associate:
   adsb:
     tDelete: 5
-    adsb2dd: "adsb2dd.30hours.dev:49155"
-    adsb2dd_https: false
-    distance_window: 10    # association window in normalised delay-Doppler space
   geometric:
     threshold: 500        # metres — spatial proximity for intersection test
     nSamples: 50          # ellipse samples per detection

@@ -16,10 +16,6 @@ function event_ellipsoid() {
         return;
       }
 
-      // Read whether cooperative localisation is enabled
-      var localiseCoop = (typeof window.localiseCooperativeTargets !== 'undefined')
-        ? window.localiseCooperativeTargets : true;
-
       // Client-side filtering: only show ellipsoids when the number of
       // unique radars with ellipsoid data meets or exceeds the user-configured
       // threshold (default 3, stored in window.minRadarEllipsoids).
@@ -60,13 +56,7 @@ function event_ellipsoid() {
       for (const key in data["ellipsoids"]) {
         if (data["ellipsoids"].hasOwnProperty(key)) {
 
-          // Filter: when cooperative localisation is disabled, only show
-          // non-cooperative ellipsoids (keys prefixed with "nc_").
           var isNoncooperative = key.indexOf("nc_") === 0;
-          if (!localiseCoop && !isNoncooperative) {
-            continue;
-          }
-
           var points = data["ellipsoids"][key];
 
           // Extract target hex from compound key "hex-radarName"

@@ -18,7 +18,6 @@ from urllib.parse import unquote
 
 import numpy as np
 
-from algorithm.associator.AdsbAssociator import AdsbAssociator
 from algorithm.associator.GeometricAssociator import GeometricAssociator
 from algorithm.localisation.EllipseParametric import EllipseParametric
 from algorithm.localisation.EllipsoidParametric import EllipsoidParametric
@@ -41,12 +40,11 @@ try:
   thresholdEllipsoid = config['localisation']['ellipsoid']['threshold']
   nDisplayEllipsoid = config['localisation']['ellipsoid']['nDisplay']
   tDeleteAdsb = config['associate']['adsb']['tDelete']
-  adsb2ddServer = config['associate']['adsb']['adsb2dd']
-  adsb2ddHttps = config['associate']['adsb']['adsb2dd_https']
   save = config['3lips']['save']
   tDelete = config['3lips']['tDelete']
   saveRetentionHours = config.get('3lips', {}).get('save_retention_hours', 24)
   tar1090Https = config['map']['tar1090_https']
+  tar1090Server = config['map']['tar1090']
   eventInterval = config.get('event', {}).get('interval', 1.0)
   httpConfig = config.get('event', {}).get('http', {})
   requestTimeout = httpConfig.get('request_timeout', 1.0)
@@ -56,7 +54,6 @@ try:
   httpLimitPerHost = httpConfig.get('limit_per_host', 5)
   dnsCacheTtl = httpConfig.get('dns_cache_ttl', 300)
   configRefreshInterval = config.get('event', {}).get('cache', {}).get('config_refresh_interval', 60)
-  distanceWindow = config.get('associate', {}).get('adsb', {}).get('distance_window', 10)
   geometricConfig = config.get('associate', {}).get('geometric', {})
   ekfConfig = config.get('tracker', {}).get('ekf', {})
   jipdaConfig = config.get('tracker', {}).get('jipda', {})
@@ -74,7 +71,6 @@ api = []
 
 # init config
 tDelete = tDelete
-adsbAssociator = AdsbAssociator(adsb2ddServer, adsb2ddHttps, requestTimeout, distanceWindow)
 ellipseParametricMean = EllipseParametric("mean", nSamplesEllipse, thresholdEllipse)
 ellipseParametricMin = EllipseParametric("min", nSamplesEllipse, thresholdEllipse)
 ellipsoidParametricMean = EllipsoidParametric("mean", nSamplesEllipsoid, thresholdEllipsoid)
@@ -208,18 +204,12 @@ async def event():
       radar_names.append(radar)
   radar_names = list(set(radar_names))
 
-  # collect unique ADS-B truth URLs
-  adsb_urls = list(set(item["adsb"] for item in api_event))
-
   # ---- Phase 1: Concurrent I/O (detections + configs + ADS-B truth) ----
   detection_results = await asyncio.gather(*[
     _fetch_json(f"http://{name}/api/detection") for name in radar_names
   ])
   config_results = await _get_radar_configs(radar_names)
-  truth_results = await asyncio.gather(*[
-    adsbTruth.process_async(url, tar1090Https, _session)
-    for url in adsb_urls
-  ])
+  truth_result = await adsbTruth.process_async(tar1090Server, tar1090Https, _session)
 
   # Build radar_dict from Phase 1 results
   radar_dict = {}
@@ -228,8 +218,6 @@ async def event():
       "detection": detection_results[i],
       "config": config_results.get(name)
     }
-
-  truth_adsb = dict(zip(adsb_urls, truth_results))
 
   # Diagnostic: log what each radar returned
   status_parts = []
@@ -240,11 +228,7 @@ async def event():
     status_parts.append(f"{name} detection={det_ok} config={cfg_ok}")
   print("Radar data: " + ", ".join(status_parts), flush=True)
 
-  # ---- Phase 2: adsb2dd association (concurrent per radar internally) ----
-  adsb_associated = await adsbAssociator.process_async(
-    radar_names, radar_dict, timestamp, _session)
-
-  # ---- Processing (unchanged logic, now with ADS-B fallback) ----
+  # ---- Processing (GeometricAssociator is the only associator) ----
   for item in api_event:
 
     start_time = time.time()
@@ -271,16 +255,7 @@ async def event():
       print("Error: Localisation invalid.")
       return
 
-    # Filter ADS-B associations to only include radars in this item.
-    # adsb_associated is keyed by hex, with values [{radar, delay, doppler}, ...].
-    associated_dets = {}
-    for hex_key, det_list in adsb_associated.items():
-      filtered = [d for d in det_list if d["radar"] in item["server"]]
-      if filtered:
-        associated_dets[hex_key] = filtered
-
     # Check whether any radars in this item have valid detection data.
-    # If all detection fetches failed, no associator can produce output.
     radars_with_data = sum(
       1 for rn in item["server"]
       if rn in radar_dict_item
@@ -293,15 +268,9 @@ async def event():
         "check radar connectivity (see 'Radar data:' log above)",
         flush=True)
 
-    # If ADS-B produced nothing (tar1090/adsb2dd down), fall back to
-    # GeometricAssociator as the primary associator.
-    if not associated_dets:
-      print(
-        "ADS-B association returned no results — "
-        "falling back to GeometricAssociator",
-        flush=True)
-      associated_dets = geometricAssociator.process(
-        item["server"], radar_dict_item, timestamp)
+    # GeometricAssociator is the sole associator — no ADS-B dependency.
+    associated_dets = geometricAssociator.process(
+      item["server"], radar_dict_item, timestamp)
 
     associated_dets_3_radars = {
       key: value
@@ -409,7 +378,7 @@ async def event():
 
     # output data to API
     item["timestamp_event"] = timestamp
-    item["truth"] = truth_adsb.get(item["adsb"], {})
+    item["truth"] = truth_result
     item["detections_associated"] = associated_dets
     item["detections_localised"] = localised_dets
     item["ellipsoids"] = ellipsoids

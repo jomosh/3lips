@@ -36,8 +36,8 @@ class EllipseParametric:
     @brief Perform target localisation using the ellipse parametric method.
     @details Generate a (non arc-length) parametric ellipse for each node.
     @param assoc_detections (dict): JSON of blah2 radar detections.
-    @param radar_data (dict): JSON of adsb2dd truth detections.
-    @return dict: Dict of associated detections.
+    @param radar_data (dict): Radar config and detection data keyed by radar name.
+    @return dict: Localised points keyed by target ID.
     """
 
     output = {}
