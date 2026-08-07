@@ -73,7 +73,14 @@ class GeometricAssociator:
                 continue
             # Clutter guard: skip epoch if too many detections per radar
             if len(delays) > self.max_detections:
+                print(
+                    f"[DEBUG-GEO] {radar_name}: SKIPPED — delay_count={len(delays)} "
+                    f"> max_detections={self.max_detections}",
+                    flush=True)
                 return {}
+            print(
+                f"[DEBUG-GEO] {radar_name}: accepted — delay_count={len(delays)}",
+                flush=True)
             det_pairs = list(zip(delays, dopplers))
             detection_lists.append(det_pairs)
             radar_names_valid.append(radar_name)

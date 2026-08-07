@@ -208,6 +208,20 @@ async def event():
   detection_results = await asyncio.gather(*[
     _fetch_json(f"http://{name}/api/detection") for name in radar_names
   ])
+
+  # ---- DEBUG: log raw detection counts per radar ----
+  for i, name in enumerate(radar_names):
+    data = detection_results[i]
+    if data is not None:
+      delay_count = len(data.get("delay", []))
+      print(
+        f"[DEBUG-DETECTION] {name} raw: delay_count={delay_count} "
+        f"timestamp={data.get('timestamp')}",
+        flush=True)
+    else:
+      print(f"[DEBUG-DETECTION] {name} raw: None", flush=True)
+  # ---- END DEBUG ----
+
   config_results = await _get_radar_configs(radar_names)
   truth_result = await adsbTruth.process_async(tar1090Server, tar1090Https, _session)
 
@@ -268,9 +282,33 @@ async def event():
         "check radar connectivity (see 'Radar data:' log above)",
         flush=True)
 
+    # ---- DEBUG: log what each radar contributes to the associator ----
+    for rn in item["server"]:
+      rd = radar_dict_item.get(rn, {})
+      if rd.get("detection") is not None and rd.get("config") is not None:
+        d = rd["detection"]
+        print(
+          f"[DEBUG-ASSOC-IN] {rn}: delay_count={len(d.get('delay', []))} "
+          f"ts={d.get('timestamp')}",
+          flush=True)
+      else:
+        det_ok = "OK" if rd.get("detection") is not None else "None"
+        cfg_ok = "OK" if rd.get("config") is not None else "None"
+        print(
+          f"[DEBUG-ASSOC-IN] {rn}: detection={det_ok} config={cfg_ok}",
+          flush=True)
+    # ---- END DEBUG ----
+
     # GeometricAssociator is the sole associator — no ADS-B dependency.
     associated_dets = geometricAssociator.process(
       item["server"], radar_dict_item, timestamp)
+
+    # ---- DEBUG: log associator output ----
+    print(
+      f"[DEBUG-ASSOC-OUT] targets={len(associated_dets)} "
+      f"targets_with_3plus={sum(1 for v in associated_dets.values() if isinstance(v, list) and len(v) >= 3)}",
+      flush=True)
+    # ---- END DEBUG ----
 
     associated_dets_3_radars = {
       key: value
