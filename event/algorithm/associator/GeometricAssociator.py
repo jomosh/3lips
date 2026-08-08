@@ -136,15 +136,11 @@ class GeometricAssociator:
                         axis=2)
                     if not np.any(dists < self.threshold):
                         passes = False
-                        # Record min distance for first failing candidate
-                        if first_fail_min_dist is None and n_radars >= 2:
-                            first_fail_min_dist = np.min(dists)
                         break
                 if not passes:
                     break
 
             if not passes:
-                n_failed_intersect += 1
                 continue
 
             total_min_dist = 0.0
@@ -161,15 +157,12 @@ class GeometricAssociator:
 
         # ---- 5. Doppler sign-consistency filter --------------------------------
         filtered = []
-        n_failed_doppler = 0
         for cand, score in survivors:
             dopplers = [c[1][1] for c in cand]
             signs = [1 if d > 0 else (-1 if d < 0 else 0) for d in dopplers]
             non_zero = [s for s in signs if s != 0]
             if non_zero and len(set(non_zero)) == 1:
                 filtered.append((cand, score))
-            else:
-                n_failed_doppler += 1
 
         if not filtered:
             return {}
