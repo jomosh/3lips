@@ -124,12 +124,13 @@ class GeometricAssociator:
 
         # ---- 4. Geometric intersection test ------------------------------------
         survivors = []  # list of (candidate_tuple, intersection_score)
+        n_failed_intersect = 0
+        first_fail_min_dist = None
         for cand in candidates:
             # Get sample arrays for each radar in this candidate
             sample_arrays = []
             skip = False
             for r_idx in range(n_radars):
-                # cand[r_idx] is (d_idx, (delay, doppler)) — no .index() needed
                 d_idx = cand[r_idx][0]
                 pts = sample_cache.get((r_idx, d_idx))
                 if pts is None or len(pts) == 0:
@@ -139,8 +140,7 @@ class GeometricAssociator:
             if skip:
                 continue
 
-            # Pairwise distance check: for each pair of radars, verify at least
-            # one pair of sample points is within threshold.
+            # Pairwise distance check
             passes = True
             for i in range(n_radars):
                 for j in range(i + 1, n_radars):
@@ -149,14 +149,17 @@ class GeometricAssociator:
                         axis=2)
                     if not np.any(dists < self.threshold):
                         passes = False
+                        # Record min distance for first failing candidate
+                        if first_fail_min_dist is None and n_radars >= 2:
+                            first_fail_min_dist = np.min(dists)
                         break
                 if not passes:
                     break
 
             if not passes:
+                n_failed_intersect += 1
                 continue
 
-            # Compute total minimum intersection distance (for scoring)
             total_min_dist = 0.0
             for i in range(n_radars):
                 for j in range(i + 1, n_radars):
@@ -166,21 +169,36 @@ class GeometricAssociator:
 
             survivors.append((cand, total_min_dist))
 
+        if first_fail_min_dist is not None:
+            print(
+                f"[DEBUG-GEO-FAIL] first_candidate_min_dist={first_fail_min_dist:.1f}m "
+                f"(threshold={self.threshold}m)",
+                flush=True)
+
         if not survivors:
+            print(
+                f"[DEBUG-GEO-STAGE] intersection_survivors=0/{len(candidates)} "
+                f"(all rejected — min_dist > {self.threshold}m)",
+                flush=True)
             return {}
 
-        # ---- 5. Doppler sign-consistency filter ---------------------------------
+        # ---- 5. Doppler sign-consistency filter --------------------------------
         filtered = []
+        n_failed_doppler = 0
         for cand, score in survivors:
-            # cand[r_idx] is (d_idx, (delay, doppler))
             dopplers = [c[1][1] for c in cand]
-            # All Doppler values must have the same sign (all positive or all negative)
             signs = [1 if d > 0 else (-1 if d < 0 else 0) for d in dopplers]
             non_zero = [s for s in signs if s != 0]
             if non_zero and len(set(non_zero)) == 1:
                 filtered.append((cand, score))
+            else:
+                n_failed_doppler += 1
 
         if not filtered:
+            print(
+                f"[DEBUG-GEO-STAGE] intersection_survivors={len(survivors)}/{len(candidates)} "
+                f"→ doppler_survivors=0 (all {len(survivors)} rejected by Doppler filter)",
+                flush=True)
             return {}
 
         # ---- 6. Deduplicate: keep best-scored candidate per cluster ------------
