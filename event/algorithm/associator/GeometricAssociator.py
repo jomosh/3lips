@@ -96,6 +96,10 @@ class GeometricAssociator:
         indexed_lists = [list(enumerate(dl)) for dl in detection_lists]
         candidates = list(itertools.product(*indexed_lists))
 
+        print(
+            f"[DEBUG-GEO-CAND] radars={n_radars} total_candidates={len(candidates)}",
+            flush=True)
+
         # ---- 3. Pre-compute ellipsoid & sample points for every detection ------
         # Key: (radar_idx, detection_idx) → ECEF point array (S, 3)
         sample_cache = {}

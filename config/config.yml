@@ -31,7 +31,6 @@ tracker:
     max_tracks: 20
 
 noncooperative:
-  enabled: false               # set to true to detect non-ADS-B targets
   match_distance: 1000         # metres — max distance to match blind↔ADS-B
 
 localisation:

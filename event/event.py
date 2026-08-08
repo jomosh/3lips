@@ -57,7 +57,6 @@ try:
   geometricConfig = config.get('associate', {}).get('geometric', {})
   ekfConfig = config.get('tracker', {}).get('ekf', {})
   jipdaConfig = config.get('tracker', {}).get('jipda', {})
-  noncoopEnabled = config.get('noncooperative', {}).get('enabled', False)
   noncoopMatchDist = config.get('noncooperative', {}).get('match_distance', 1000)
 except FileNotFoundError:
   print("Error: Configuration file not found.")
@@ -321,52 +320,28 @@ async def event():
 
     localised_dets = localisation.process(associated_dets_3_radars, radar_dict_item)
 
-    # ---- Blind association + non-cooperative detection (F0+F1+C2+F3) -------
+    # ---- Non-cooperative detection (always active) -------------------------
+    # Since ADS-B association is removed, all targets are blind.
+    # Reuse the primary associator output for non-cooperative tracking.
     detections_noncooperative = {}
-    blind_candidates = {}
-    if noncoopEnabled:
-      # Run GeometricAssociator to find blind candidates
-      blind_candidates = geometricAssociator.process(
-        item["server"], radar_dict_item, timestamp)
+    blind_candidates = associated_dets
 
-      if blind_candidates:
-        n_radars_available = sum(
-          1 for rn in item["server"]
-          if rn in radar_dict_item
-          and radar_dict_item[rn] is not None
-          and radar_dict_item[rn].get("config") is not None
-          and radar_dict_item[rn].get("detection") is not None
-          and radar_dict_item[rn]["detection"].get("delay")
-        )
-        if n_radars_available >= 3:
-          tracked_blind = jipda.process(
-            blind_candidates, radar_dict_item, timestamp)
-        else:
-          tracked_blind = {}
+    if blind_candidates:
+      n_radars_available = radars_with_data
+      if n_radars_available >= 3:
+        tracked_blind = jipda.process(
+          blind_candidates, radar_dict_item, timestamp)
+      else:
+        tracked_blind = {}
 
-        # Cross-reference: classify blind targets vs ADS-B targets
-        for track_id, track_data in tracked_blind.items():
-          if track_data.get('P_exist', 0) < 0.3:
-            continue
-          pts = track_data.get('points', [])
-          if not pts:
-            continue
-          blind_ecef = Geometry.lla2ecef(pts[0][0], pts[0][1], pts[0][2])
-          blind_ecef_arr = np.array(blind_ecef)
-
-          nearest_dist = float('inf')
-          for hex_key, loc_data in localised_dets.items():
-            adsb_pts = loc_data.get('points', [])
-            if not adsb_pts:
-              continue
-            adsb_ecef = Geometry.lla2ecef(
-              adsb_pts[0][0], adsb_pts[0][1], adsb_pts[0][2])
-            dist = np.linalg.norm(blind_ecef_arr - np.array(adsb_ecef))
-            if dist < nearest_dist:
-              nearest_dist = dist
-
-          if nearest_dist > noncoopMatchDist:
-            detections_noncooperative[track_id] = track_data
+      # Classify tracked targets: all are non-cooperative (no ADS-B to match)
+      for track_id, track_data in tracked_blind.items():
+        if track_data.get('P_exist', 0) < 0.3:
+          continue
+        pts = track_data.get('points', [])
+        if not pts:
+          continue
+        detections_noncooperative[track_id] = track_data
 
     item["detections_noncooperative"] = detections_noncooperative
 
