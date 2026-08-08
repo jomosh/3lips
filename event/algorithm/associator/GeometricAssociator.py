@@ -73,14 +73,7 @@ class GeometricAssociator:
                 continue
             # Clutter guard: skip epoch if too many detections per radar
             if len(delays) > self.max_detections:
-                print(
-                    f"[DEBUG-GEO] {radar_name}: SKIPPED — delay_count={len(delays)} "
-                    f"> max_detections={self.max_detections}",
-                    flush=True)
                 return {}
-            print(
-                f"[DEBUG-GEO] {radar_name}: accepted — delay_count={len(delays)}",
-                flush=True)
             det_pairs = list(zip(delays, dopplers))
             detection_lists.append(det_pairs)
             radar_names_valid.append(radar_name)
@@ -95,10 +88,6 @@ class GeometricAssociator:
         # carried through without an O(n) .index() lookup.
         indexed_lists = [list(enumerate(dl)) for dl in detection_lists]
         candidates = list(itertools.product(*indexed_lists))
-
-        print(
-            f"[DEBUG-GEO-CAND] radars={n_radars} total_candidates={len(candidates)}",
-            flush=True)
 
         # ---- 3. Pre-compute ellipsoid & sample points for every detection ------
         # Key: (radar_idx, detection_idx) → ECEF point array (S, 3)
@@ -124,8 +113,6 @@ class GeometricAssociator:
 
         # ---- 4. Geometric intersection test ------------------------------------
         survivors = []  # list of (candidate_tuple, intersection_score)
-        n_failed_intersect = 0
-        first_fail_min_dist = None
         for cand in candidates:
             # Get sample arrays for each radar in this candidate
             sample_arrays = []
@@ -169,17 +156,7 @@ class GeometricAssociator:
 
             survivors.append((cand, total_min_dist))
 
-        if first_fail_min_dist is not None:
-            print(
-                f"[DEBUG-GEO-FAIL] first_candidate_min_dist={first_fail_min_dist:.1f}m "
-                f"(threshold={self.threshold}m)",
-                flush=True)
-
         if not survivors:
-            print(
-                f"[DEBUG-GEO-STAGE] intersection_survivors=0/{len(candidates)} "
-                f"(all rejected — min_dist > {self.threshold}m)",
-                flush=True)
             return {}
 
         # ---- 5. Doppler sign-consistency filter --------------------------------
@@ -195,10 +172,6 @@ class GeometricAssociator:
                 n_failed_doppler += 1
 
         if not filtered:
-            print(
-                f"[DEBUG-GEO-STAGE] intersection_survivors={len(survivors)}/{len(candidates)} "
-                f"→ doppler_survivors=0 (all {len(survivors)} rejected by Doppler filter)",
-                flush=True)
             return {}
 
         # ---- 6. Deduplicate: keep best-scored candidate per cluster ------------
