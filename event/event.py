@@ -302,6 +302,25 @@ async def event():
     associated_dets = geometricAssociator.process(
       item["server"], radar_dict_item, timestamp)
 
+    # ---- Per-radar fallback: when associator produces nothing but radars ----
+    # have data, build single-radar synthetic targets so every detection gets
+    # an ellipsoid on the map.  The frontend minRadarEllipsoids setting still
+    # filters by radar count.
+    if not associated_dets and radars_with_data > 0:
+      synthetic_id = 0
+      associated_dets = {}
+      for rn, rd in radar_dict_item.items():
+        if rd.get("detection") is None or rd.get("config") is None:
+          continue
+        delays = rd["detection"].get("delay", [])
+        dopplers = rd["detection"].get("doppler", [])
+        for delay, doppler in zip(delays, dopplers):
+          key = f"raw_{synthetic_id}"
+          associated_dets[key] = [
+            {"radar": rn, "delay": delay, "doppler": doppler}
+          ]
+          synthetic_id += 1
+
     # ---- DEBUG: log associator output ----
     print(
       f"[DEBUG-ASSOC-OUT] targets={len(associated_dets)} "

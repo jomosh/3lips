@@ -263,7 +263,7 @@ class GeometricAssociator:
         # Local ellipse: x = a cos(u), y = b sin(u) cos(v), z = b sin(u) sin(v)
         # Convert bistatic range from milliseconds to metres for consistent
         # addition with ellipsoid.distance (which is in metres).
-        bistatic_range_m = bistatic_range_ms * 299792458 / 1000
+        bistatic_range_m = bistatic_range_ms
         a = (bistatic_range_m + ellipsoid.distance) / 2
         b_sq = a * a - (ellipsoid.distance / 2) ** 2
         if b_sq <= 0:
