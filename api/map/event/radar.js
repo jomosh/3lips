@@ -15,6 +15,8 @@ function event_radar() {
       // ---- Cooperative localised targets ---------------------------------
       if (data["detections_localised"]) {
         removeEntitiesOlderThanAndFade("detection", 10, 0.5);
+        // Also age out intersection markers from previous polls
+        removeEntitiesOlderThanAndFade("intersection", 12, 0.5);
 
         // Read truth data for flight/altitude lookup
         var truth = data["truth"] || {};
@@ -82,6 +84,34 @@ function event_radar() {
             var storedHex = id.substring(11);
             if (!seenHex[storedHex]) {
               removeTargetLabel("detection", storedHex);
+            }
+          }
+        }
+
+        // ---- Intersection markers: red ▼ for targets with ≥3 radars ----------
+        if (data["detections_associated"]) {
+          for (const hexKey in data["detections_localised"]) {
+            if (!data["detections_localised"].hasOwnProperty(hexKey)) continue;
+            var assoc = data["detections_associated"][hexKey];
+            if (!assoc || !Array.isArray(assoc)) continue;
+            // Count unique radars for this target
+            var uniqueRadars = {};
+            for (var ai = 0; ai < assoc.length; ai++) {
+              uniqueRadars[assoc[ai].radar] = true;
+            }
+            if (Object.keys(uniqueRadars).length >= 3) {
+              var locPts = data["detections_localised"][hexKey].points;
+              if (locPts && locPts.length > 0) {
+                var pt = locPts[locPts.length - 1];
+                addPoint(
+                  pt[0], pt[1], pt[2],
+                  hexKey,
+                  'rgba(255, 30, 30, 0.95)',
+                  18,
+                  "intersection",
+                  Date.now()
+                );
+              }
             }
           }
         }

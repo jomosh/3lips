@@ -464,6 +464,26 @@ map.on('load', function () {
     },
   });
 
+  // symbol layer for intersection markers (red ▼ for targets with ≥3 radars)
+  map.addLayer({
+    id: 'intersection-marker',
+    type: 'symbol',
+    source: 'points',
+    filter: ['==', ['get', 'type'], 'intersection'],
+    layout: {
+      'text-field':  '▼',
+      'text-font':   ['Open Sans Regular', 'Arial Unicode MS Regular'],
+      'text-size':   18,
+      'text-anchor': 'top',
+      'text-offset': [0, 0],
+    },
+    paint: {
+      'text-color':       'rgba(255, 30, 30, 0.95)',
+      'text-halo-color':  'rgba(0, 0, 0, 0.4)',
+      'text-halo-width':  2,
+    },
+  });
+
   // add radar site points (rx and tx) from each blah2 server
   // Only when show_radar_sites is true in config (default); skip entirely when
   // radar positions should not be publicly visible.

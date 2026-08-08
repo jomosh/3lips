@@ -53,20 +53,39 @@ function event_ellipsoid() {
         removeEntitiesByType("ellipsoids");
         removeEntitiesByType("ellipsoids-noncoop");
       }
+      // Build per-target radar count from ellipsoid keys.
+      // Keys are "targetHex-radarName" or "nc_targetHex-radarName".
+      var targetRadarCount = {};
+      Object.keys(data["ellipsoids"]).forEach(function(k) {
+        var noncoop = k.indexOf("nc_") === 0;
+        var hex = noncoop ? k.substring(3).split('-')[0] : k.split('-')[0];
+        targetRadarCount[hex] = (targetRadarCount[hex] || 0) + 1;
+      });
+
       for (const key in data["ellipsoids"]) {
         if (data["ellipsoids"].hasOwnProperty(key)) {
 
           var isNoncooperative = key.indexOf("nc_") === 0;
           var points = data["ellipsoids"][key];
 
-          // Extract target hex from compound key "hex-radarName"
-          // (strip "nc_" prefix if present for hashing)
+          // Extract target prefix from compound key "hex-radarName"
+          // (strip "nc_" prefix if present)
           var targetHex = isNoncooperative ? key.substring(3).split('-')[0] : key.split('-')[0];
 
-          // Per-target color: vary hue in the magenta/rose range (290°–330°)
-          // so different targets' ellipsoids are visually distinct while staying
-          // outside the altitude palette (orange 30° → purple 280°).
-          var hue = hashToHue(targetHex, 290, 330);
+          // Per-target color by radar count:
+          //   1 radar  → magenta/rose  (290°–330°) — detection-level ellipsoid
+          //   2 radars → teal/cyan     (170°–200°) — pair association
+          //   3+ radars → lime/green   (80°–120°)  — multi-radar fix
+          var nRadars = targetRadarCount[targetHex] || 1;
+          var hueMin, hueMax;
+          if (nRadars >= 3) {
+            hueMin = 80; hueMax = 120;
+          } else if (nRadars >= 2) {
+            hueMin = 170; hueMax = 200;
+          } else {
+            hueMin = 290; hueMax = 330;
+          }
+          var hue = hashToHue(targetHex, hueMin, hueMax);
           var color = 'hsla(' + hue + ', 85%, 55%, 0.45)';
 
           if (isNoncooperative) {
