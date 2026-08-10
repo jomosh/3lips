@@ -30,9 +30,6 @@ tracker:
     confirmation_gate: 2000    # metres — spatial gate for confirming pending tracks
     max_tracks: 20
 
-noncooperative:
-  match_distance: 1000         # metres — max distance to match blind↔ADS-B
-
 localisation:
   ellipse:                      # 2D (ground-level) parametric localisation
     nSamples: 100               # azimuth samples around each ellipse

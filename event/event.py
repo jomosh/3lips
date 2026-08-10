@@ -57,7 +57,6 @@ try:
   geometricConfig = config.get('associate', {}).get('geometric', {})
   ekfConfig = config.get('tracker', {}).get('ekf', {})
   jipdaConfig = config.get('tracker', {}).get('jipda', {})
-  noncoopMatchDist = config.get('noncooperative', {}).get('match_distance', 1000)
 except FileNotFoundError:
   print("Error: Configuration file not found.")
 except yaml.YAMLError as e:
