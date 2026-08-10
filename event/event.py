@@ -407,11 +407,18 @@ async def main():
     _session = session
 
     # Start background config refresh
-    asyncio.create_task(_background_config_refresh())
+    refresh_task = asyncio.create_task(_background_config_refresh())
 
-    while True:
-      await event()
-      await asyncio.sleep(eventInterval)
+    try:
+      while True:
+        await event()
+        await asyncio.sleep(eventInterval)
+    finally:
+      refresh_task.cancel()
+      try:
+        await refresh_task
+      except asyncio.CancelledError:
+        pass
 
 def _cleanup_save_files(save_dir, retention_hours):
   """Delete .ndjson files older than retention_hours from save_dir."""

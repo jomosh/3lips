@@ -45,6 +45,7 @@ try:
   radar_data = config['radar']
   map_data = config['map']
   config_data = config
+  tar1090_server = map_data.get('tar1090', '')
 except FileNotFoundError:
   print("Error: Configuration file not found.")
 except yaml.YAMLError as e:
@@ -68,6 +69,7 @@ localisations = [
 valid = {}
 valid['servers'] = [item['url'] for item in servers]
 valid['localisations'] = [item['id'] for item in localisations]
+valid['tar1090'] = tar1090_server
 
 # message received callback
 async def callback_message_received(msg):
@@ -513,6 +515,11 @@ def proxy_adsb():
   parsed = urllib.parse.urlparse('//' + url)
   if not parsed.hostname:
     return _make_proxy_error(correlation_id, "Invalid URL format", 400)
+
+  # SSRF protection: only allow proxying to the configured tar1090 server
+  if url != valid['tar1090']:
+    app.logger.warning(f"[{correlation_id}] Unauthorized tar1090 server: {url}")
+    return _make_proxy_error(correlation_id, "ADS-B server not authorized", 403)
 
   tar1090_https = config_data.get('map', {}).get('tar1090_https', False)
   preferred = 'https' if tar1090_https else 'http'
