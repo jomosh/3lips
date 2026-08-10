@@ -4,6 +4,7 @@
 """
 
 import requests
+import asyncio
 import aiohttp
 
 class AdsbTruth:
@@ -11,7 +12,7 @@ class AdsbTruth:
     """
     @class AdsbTruth
     @brief A class for storing ADS-B truth in the API response.
-    @details Uses truth data in delay-Doppler space from an tar1090 server.
+    @details Fetches ADS-B position data (lat/lon/alt/flight) from a tar1090 server.
     """
 
     def __init__(self, seen_pos_limit, request_timeout=1.0):
@@ -82,6 +83,8 @@ class AdsbTruth:
             async with session.get(url, timeout=aiohttp.ClientTimeout(total=self.request_timeout)) as resp:
                 resp.raise_for_status()
                 data = await resp.json(content_type=None)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             print(f"Error fetching data from {url}: {e}")
             return {}

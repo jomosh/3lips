@@ -90,8 +90,10 @@ _session = None
 
 
 async def _fetch_json(url, timeout=None):
-  """Fetch JSON from a URL using the shared session. Returns None on failure.
-  If timeout is None, the configured request_timeout from config.yml is used."""
+  """Fetch JSON from a URL using the shared session.
+  Returns None on failure.  If timeout is None, the configured
+  request_timeout from config.yml is used.
+  CancelledError is re-raised for clean event-loop shutdown."""
   global _session
   if timeout is None:
     timeout = requestTimeout
@@ -99,8 +101,22 @@ async def _fetch_json(url, timeout=None):
     async with _session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
       resp.raise_for_status()
       return await resp.json(content_type=None)
+  except asyncio.CancelledError:
+    raise
+  except asyncio.TimeoutError:
+    print(f"Timeout fetching {url}")
+    return None
+  except aiohttp.ClientConnectorError as e:
+    print(f"Connection failed to {url}: {e}")
+    return None
+  except aiohttp.ClientResponseError as e:
+    print(f"HTTP {e.status} from {url}")
+    return None
+  except aiohttp.ClientError as e:
+    print(f"HTTP client error from {url}: {e}")
+    return None
   except Exception as e:
-    print(f"Error fetching {url}: {e}")
+    print(f"Unexpected error fetching {url}: {e}")
     return None
 
 
@@ -301,17 +317,14 @@ async def event():
 
     localised_dets = localisation.process(associated_dets_3_radars, radar_dict_item)
 
-    # ---- Non-cooperative detection (always active) -------------------------
-    # Since ADS-B association is removed, all targets are blind.
-    # Reuse the primary associator output for non-cooperative tracking.
+    # ---- JIPDA tracking (always active) -----------------------------------
     detections_noncooperative = {}
-    blind_candidates = associated_dets
 
-    if blind_candidates:
+    if associated_dets:
       n_radars_available = radars_with_data
       if n_radars_available >= 3:
         tracked_blind = jipda.process(
-          blind_candidates, radar_dict_item, timestamp)
+          associated_dets, radar_dict_item, timestamp)
       else:
         tracked_blind = {}
 
@@ -347,26 +360,6 @@ async def event():
               for pt in points:
                 pt[2] = 0
             ellipsoids[key + "-" + radar["radar"]] = points
-
-      # Also generate ellipsoids for blind (non-cooperative) targets
-      if blind_candidates:
-        for key in blind_candidates:
-          for radar in blind_candidates[key]:
-            if radar["radar"] not in radar_dict_item:
-              continue
-            if radar_dict_item[radar["radar"]] is None:
-              continue
-            cfg = radar_dict_item[radar["radar"]].get("config")
-            if cfg is None:
-              continue
-            points = _sample_and_convert_ellipsoid(
-              cfg, radar["radar"], radar["delay"],
-              localisation, nDisplayEllipse)
-            if item["localisation"] == "ellipse-parametric-mean" or \
-            item["localisation"] == "ellipse-parametric-min":
-              for pt in points:
-                pt[2] = 0
-            ellipsoids["nc_" + key + "-" + radar["radar"]] = points
 
     stop_time = time.time()
 
