@@ -519,7 +519,7 @@ def proxy_adsb():
   # SSRF protection: only allow proxying to the configured tar1090 server
   if url != valid['tar1090']:
     app.logger.warning(f"[{correlation_id}] Unauthorized tar1090 server: {url}")
-    return _make_proxy_error(correlation_id, "ADS-B server not authorized", 403)
+    return _make_proxy_error(correlation_id, "tar1090 server not authorized", 403)
 
   tar1090_https = config_data.get('map', {}).get('tar1090_https', False)
   preferred = 'https' if tar1090_https else 'http'

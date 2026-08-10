@@ -306,16 +306,16 @@ async def event():
           ]
           synthetic_id += 1
 
-    associated_dets_3_radars = {
+    associated_dets_min3_radars = {
       key: value
       for key, value in associated_dets.items()
       if isinstance(value, list) and len(value) >= 3
     }
-    if associated_dets_3_radars:
+    if associated_dets_min3_radars:
       print('Detections from 3 or more radars availble.')
-      print(associated_dets_3_radars)
+      print(associated_dets_min3_radars)
 
-    localised_dets = localisation.process(associated_dets_3_radars, radar_dict_item)
+    localised_dets = localisation.process(associated_dets_min3_radars, radar_dict_item)
 
     # ---- JIPDA tracking (always active) -----------------------------------
     detections_noncooperative = {}
