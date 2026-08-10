@@ -51,7 +51,6 @@ blah2 radar nodes (HTTP)          ADS-B truth (tar1090 HTTP)
 event/event.py  ─── ZMQ (port 6969) ───  api/api.py (Flask)
    │                                          │
    ├─ algorithm/associator/GeometricAssociator
-   ├─ algorithm/associator/GeometricAssociator     └─ map/ (MapLibre GL JS frontend)
    ├─ algorithm/localisation/
    │   ├─ EllipseParametric.py   (2D, parametric sampling)
    │   ├─ EllipsoidParametric.py (3D, parametric sampling)

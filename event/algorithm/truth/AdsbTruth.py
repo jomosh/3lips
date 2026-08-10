@@ -3,7 +3,6 @@
 @author 30hours
 """
 
-import requests
 import asyncio
 import aiohttp
 
@@ -25,48 +24,6 @@ class AdsbTruth:
 
         self.seen_pos_limit = seen_pos_limit
         self.request_timeout = request_timeout
-
-    def process(self, server, use_https):
-
-        """
-        @brief Store ADS-B truth for each target in LLA.
-        @param server (str): The tar1090 server to get truth from.
-        @param use_https (bool): Use HTTPS if True, HTTP if False.
-        @return dict: Associated detections by [hex].
-        """
-
-        output = {}
-
-        # get tar1090 URL
-        scheme = 'https' if use_https else 'http'
-        url = scheme + '://' + server + '/data/aircraft.json'
-
-        # get ADSB detections
-        try:
-            response = requests.get(url, timeout=1)
-            response.raise_for_status()
-            data = response.json()
-            adsb = data
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching data from {url}: {e}")
-            adsb = None
-
-        # store relevant data
-        if adsb:
-            # loop over aircraft
-            for aircraft in adsb["aircraft"]:
-                if aircraft.get("seen_pos") and \
-                    aircraft.get("alt_geom") and \
-                    aircraft.get("flight") and \
-                    aircraft.get("seen_pos") < self.seen_pos_limit:
-                        output[aircraft["hex"]] = {}
-                        output[aircraft["hex"]]["lat"] = aircraft["lat"]
-                        output[aircraft["hex"]]["lon"] = aircraft["lon"]
-                        output[aircraft["hex"]]["alt"] = aircraft["alt_geom"]
-                        output[aircraft["hex"]]["flight"] = aircraft["flight"]
-                        output[aircraft["hex"]]["timestamp"] = \
-                          adsb["now"] - aircraft["seen_pos"]
-        return output
 
     async def process_async(self, server, use_https, session):
         """
