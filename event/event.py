@@ -123,7 +123,7 @@ async def _fetch_json(url, timeout=None):
 async def _get_radar_configs(radar_names):
   """Return cached configs for the given radar names.
   Fetches on cache miss. All missing radars fetched concurrently.
-  Thread-safe via asyncio.Lock."""
+  Coroutine-safe via asyncio.Lock (single-threaded async)."""
   # Determine which radars need fetching
   missing = [n for n in radar_names
              if n not in _radar_config_cache

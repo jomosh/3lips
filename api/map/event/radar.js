@@ -13,10 +13,13 @@ function event_radar() {
     .then(data => {
 
       // ---- Cooperative localised targets ---------------------------------
+      // Age out detection and intersection markers from previous polls
+      // (run unconditionally so orphaned markers don't persist when a
+      //  previously-localised target drops below 3 radars this epoch)
+      removeEntitiesOlderThanAndFade("detection", 10, 0.5);
+      removeEntitiesOlderThanAndFade("intersection", 12, 0.5);
+
       if (data["detections_localised"]) {
-        removeEntitiesOlderThanAndFade("detection", 10, 0.5);
-        // Also age out intersection markers from previous polls
-        removeEntitiesOlderThanAndFade("intersection", 12, 0.5);
 
         // Read truth data for flight/altitude lookup
         var truth = data["truth"] || {};
