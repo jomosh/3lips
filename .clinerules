@@ -8,7 +8,7 @@
 
 ## 1. Project Identity
 
-3lips is a **real-time multi-static passive radar target localisation system**. It receives bistatic delay/Doppler detections from multiple [blah2](https://github.com/jomosh/blah2) radar nodes, associates them to aircraft targets using ADS-B truth via [adsb2dd](https://github.com/jomosh/adsb2dd), localises target positions using geometric algorithms, and serves results through a JSON API and a MapLibre GL JS web frontend.
+3lips is a **real-time multi-static passive radar target localisation system**. It receives bistatic delay/Doppler detections from multiple [blah2](https://github.com/jomosh/blah2) radar nodes, associates them using geometric enumeration, localises target positions using geometric algorithms, and serves results through a JSON API and a MapLibre GL JS web frontend. ADS-B truth from a [tar1090](https://github.com/wiedehopf/tar1090) server is displayed as an overlay for reference.
 
 This is a **signal-processing and sensor fusion project**, not a general web app. Every change must be evaluated for its effect on **localisation accuracy**, **processing latency**, and **algorithmic correctness**.
 
@@ -50,7 +50,6 @@ blah2 radar nodes (HTTP)          ADS-B truth (tar1090 HTTP)
         ▼                                    ▼
 event/event.py  ─── ZMQ (port 6969) ───  api/api.py (Flask)
    │                                          │
-   ├─ algorithm/associator/AdsbAssociator     └─ map/ (MapLibre GL JS frontend)
    ├─ algorithm/associator/GeometricAssociator
    ├─ algorithm/localisation/
    │   ├─ EllipseParametric.py   (2D, parametric sampling)
@@ -185,7 +184,7 @@ def process(self, radar_list: list, radar_data: dict, timestamp: int) -> dict:
     # Returns: {target_id: [{radar, delay, doppler}]}
 ```
 
-The AdsbAssociator is always the primary associator. The GeometricAssociator runs as a parallel blind path when `noncooperative.enabled` is true.
+The GeometricAssociator is the primary associator for all targets.
 
 ### API Output Schema
 
@@ -193,9 +192,7 @@ The AdsbAssociator is always the primary associator. The GeometricAssociator run
 {
   "hash": "...",
   "server": ["radar1", "radar2"],
-  "associator": "adsb-associator",
   "localisation": "ellipse-parametric-mean",
-  "adsb": "adsb.server",
   "timestamp": 1234567890000,
   "timestamp_event": 1234567890000,
   "truth": { "hex": { "lat": ..., "lon": ..., "alt": ..., "flight": "..." } },
@@ -210,9 +207,8 @@ The AdsbAssociator is always the primary associator. The GeometricAssociator run
 }
 ```
 
-- Cooperative ellipsoids use key format `"targetId-radarName"`.
+- Ellipsoid keys use format `"targetId-radarName"`.
 - Non-cooperative (blind) ellipsoids use key format `"nc_targetId-radarName"`.
-- The `nc_` prefix is used by the frontend to filter ellipsoid visibility via the "Localise cooperative targets" toggle.
 
 ### Event Loop Lifecycle
 
@@ -338,29 +334,26 @@ d = np.linalg.norm(pts - np.array([x, y, z]), axis=1)
 
 ## 7. Non-Cooperative Target Pipeline
 
-The Geometric Associator + JIPDA pipeline runs alongside the AdsbAssociator as a blind (ADS-B-free) path:
+The GeometricAssociator + JIPDA pipeline handles all target localisation:
 
-1. **GeometricAssociator** finds blind candidates by cross-radar enumeration (requires ≥1 radar; ghost suppression requires ≥3).
+1. **GeometricAssociator** finds candidates by cross-radar enumeration (requires ≥1 radar; ghost suppression requires ≥3).
 2. **JIPDATracker** estimates positions (gated on ≥3 radars with detection data for a reliable 3D fix).
-3. **Cross-reference**: each blind target compared to nearest ADS-B target in ECEF. Distance > `noncooperative.match_distance` → classified as non-cooperative.
-4. Non-cooperative ellipsoids get `nc_` key prefix; detection dots get yellow colour + white border.
+3. Per-radar detection ellipsoids are rendered when multi-radar association is unavailable.
 
-### Non-Cooperative Visual Distinction
+### Visual Distinction
 
-- Detection dots: yellow `rgba(255,200,0,0.75)` + 3px white border
-- Ellipsoid points: same rose/magenta hue + subtle 1px semi-transparent white border
-- Type `"noncooperative"` for detection dots, `"ellipsoids-noncoop"` for ellipsoid points
+- Detection dots: altitude-colored for localised targets; yellow `rgba(255,200,0,0.75)` for tracked non-cooperative
+- Ellipsoid points: colored by radar count (1=magenta, 2=teal, 3+=lime)
+- Intersection markers: red ▼ for targets with ≥3 radars
+- Type `"noncooperative"` for detection dots, `"ellipsoids-noncoop"` for non-coop ellipsoid points
 
 ### Frontend Toggle Behavior
 
-Two independent settings:
+One setting:
 
 | Toggle | Controls | Default |
 |---|---|---|
-| **Localise cooperative targets** | Cooperative (ADS-B-matched) ellipsoids + detection dots | ☑ checked |
 | **Show cooperative targets** | Raw ADS-B truth overlay from tar1090 | ☑ checked |
-
-Non-cooperative targets are ALWAYS shown regardless of toggles.
 
 ---
 

@@ -104,20 +104,6 @@ var showCooperativeTargets = (function() {
 })();
 
 /**
- * Whether to localise cooperative (ADS-B-associated) targets on the map.
- * When false, cooperative ellipsoids and cooperative detection dots/labels
- * are hidden.  Non-cooperative (blah2-only) localisation output is always
- * shown regardless of this setting.
- * Persisted in localStorage key '3lips_localiseCooperativeTargets', default true.
- */
-var localiseCooperativeTargets = (function() {
-  try {
-    var v = localStorage.getItem('3lips_localiseCooperativeTargets');
-    if (v === 'false') return false;
-    return true;
-  } catch(e) { return true; }
-})();
-/**
  * @brief Strips HTML/XML special characters from external data and
  * truncates to a safe display length for MapLibre text-field labels.
  * @param {string} text - Raw input string.
@@ -241,28 +227,6 @@ function setShowCooperativeTargets(show) {
   // Re-run ADS-B poll to apply immediately
   if (typeof event_adsb === 'function') {
     event_adsb();
-  }
-}
-
-/**
- * @brief Toggles localisation of cooperative (ADS-B-associated) targets.
- * When disabled, cooperative ellipsoids and cooperative detection dots/labels
- * are hidden; non-cooperative localisation remains visible.
- * Called from the settings popup checkbox onchange handler.
- * @param {boolean} localise - Whether to localise cooperative targets.
- */
-function setLocaliseCooperativeTargets(localise) {
-  localiseCooperativeTargets = localise;
-  try { localStorage.setItem('3lips_localiseCooperativeTargets', String(localise)); } catch(e) {}
-  // Sync checkbox
-  var cb = document.getElementById('input-localise-cooperative');
-  if (cb) cb.checked = localise;
-  // Re-run radar and ellipsoid polls to apply immediately
-  if (typeof event_radar === 'function') {
-    event_radar();
-  }
-  if (typeof event_ellipsoid === 'function') {
-    event_ellipsoid();
   }
 }
 
@@ -500,6 +464,26 @@ map.on('load', function () {
     },
   });
 
+  // symbol layer for intersection markers (red ▼ for targets with ≥3 radars)
+  map.addLayer({
+    id: 'intersection-marker',
+    type: 'symbol',
+    source: 'points',
+    filter: ['==', ['get', 'type'], 'intersection'],
+    layout: {
+      'text-field':  '▼',
+      'text-font':   ['Open Sans Regular', 'Arial Unicode MS Regular'],
+      'text-size':   18,
+      'text-anchor': 'top',
+      'text-offset': [0, 0],
+    },
+    paint: {
+      'text-color':       'rgba(255, 30, 30, 0.95)',
+      'text-halo-color':  'rgba(0, 0, 0, 0.4)',
+      'text-halo-width':  2,
+    },
+  });
+
   // add radar site points (rx and tx) from each blah2 server
   // Only when show_radar_sites is true in config (default); skip entirely when
   // radar positions should not be publicly visible.
@@ -554,10 +538,13 @@ map.on('load', function () {
     });
   }
 
-  // resolve ADS-B truth URL through our proxy to avoid direct client-to-node requests
+  // resolve ADS-B truth URL through our proxy to avoid direct client-to-node requests.
+  // If provided in the URL, use it; otherwise fall back to config.yml:map.tar1090.
   var adsb_param = new URLSearchParams(window.location.search).get('adsb');
   if (adsb_param && adsb_param.trim() !== '') {
     adsb_url = window.location.origin + '/api/proxy/adsb?url=' + encodeURIComponent(adsb_param);
+  } else if (config && config.map && config.map.tar1090) {
+    adsb_url = window.location.origin + '/api/proxy/adsb?url=' + encodeURIComponent(config.map.tar1090);
   } else {
     adsb_url = null;
   }
@@ -573,9 +560,6 @@ map.on('load', function () {
   if (inpFade) inpFade.value = ellipsoidFadeTime;
   var cbShowCoop = document.getElementById('input-show-cooperative');
   if (cbShowCoop) cbShowCoop.checked = showCooperativeTargets;
-  var cbLocaliseCoop = document.getElementById('input-localise-cooperative');
-  if (cbLocaliseCoop) cbLocaliseCoop.checked = localiseCooperativeTargets;
-
   // replace static legend labels with proportionally-positioned ones
   updateLegendLabels();
 

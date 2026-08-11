@@ -2,7 +2,7 @@
 
 ## Project Purpose
 
-3lips is a **real-time multi-static passive radar target localisation system**. It receives bistatic delay/Doppler detections from multiple [blah2](https://github.com/jomosh/blah2) radar nodes, associates them to aircraft targets using ADS-B truth via [adsb2dd](https://github.com/jomosh/adsb2dd), localises target positions using geometric algorithms, and serves results through a JSON API and a MapLibre GL JS web frontend.
+3lips is a **real-time multi-static passive radar target localisation system**. It receives bistatic delay/Doppler detections from multiple [blah2](https://github.com/jomosh/blah2) radar nodes, associates them using geometric enumeration, localises target positions using geometric algorithms, and serves results through a JSON API and a MapLibre GL JS web frontend.
 
 This is a **signal-processing and sensor fusion project**, not a general web app. Every change must be evaluated for its effect on **localisation accuracy**, **processing latency**, and **algorithmic correctness**.
 

@@ -45,6 +45,7 @@ try:
   radar_data = config['radar']
   map_data = config['map']
   config_data = config
+  tar1090_server = map_data.get('tar1090', '')
 except FileNotFoundError:
   print("Error: Configuration file not found.")
 except yaml.YAMLError as e:
@@ -56,10 +57,6 @@ for radar in radar_data:
   if radar['name'] and radar['url']:
     servers.append({'name': radar['name'], 'url': radar['url']})
 
-associators = [
-  {"name": "ADSB Associator", "id": "adsb-associator"},
-]
-
 localisations = [
   {"name": "Ellipse Parametric (Mean)", "id": "ellipse-parametric-mean"},
   {"name": "Ellipse Parametric (Min)", "id": "ellipse-parametric-min"},
@@ -68,16 +65,11 @@ localisations = [
   {"name": "Spherical Intersection", "id": "spherical-intersection"}
 ]
 
-adsbs = [
-  {"name": map_data['tar1090'], "url": map_data['tar1090']},
-  {"name": "None", "url": ""}
-]
-
 # store valid ids
 valid = {}
 valid['servers'] = [item['url'] for item in servers]
 valid['localisations'] = [item['id'] for item in localisations]
-valid['adsbs'] = [item['url'] for item in adsbs]
+valid['tar1090'] = tar1090_server
 
 # message received callback
 async def callback_message_received(msg):
@@ -89,7 +81,7 @@ message_api_request = Message('event', 6969)
 @app.route("/")
 def index():
   return render_template("index.html", servers=servers, \
-  localisations=localisations, adsbs=adsbs)
+  localisations=localisations)
 
 # serve static files from the /app/public folder
 @app.route('/public/<path:file>')
@@ -104,13 +96,10 @@ def api():
   # input protection
   servers_api = request.args.getlist('server')
   localisations_api = request.args.getlist('localisation')
-  adsbs_api = request.args.getlist('adsb')
   if not all(item in valid['servers'] for item in servers_api):
     return 'Invalid server'
   if not all(item in valid['localisations'] for item in localisations_api):
     return 'Invalid localisation'
-  if not all(item in valid['adsbs'] for item in adsbs_api):
-    return 'Invalid ADSB'
   # send to event handler
   try:
     reply_chunks = message_api_request.send_message(api)
@@ -527,10 +516,10 @@ def proxy_adsb():
   if not parsed.hostname:
     return _make_proxy_error(correlation_id, "Invalid URL format", 400)
 
-  # Strict whitelist validation against allowed ADS-B servers in config
-  if url not in valid['adsbs']:
-    app.logger.warning(f"[{correlation_id}] Unauthorized ADS-B server: {url}")
-    return _make_proxy_error(correlation_id, "ADS-B server not authorized", 403)
+  # SSRF protection: only allow proxying to the configured tar1090 server
+  if url != valid['tar1090']:
+    app.logger.warning(f"[{correlation_id}] Unauthorized tar1090 server: {url}")
+    return _make_proxy_error(correlation_id, "tar1090 server not authorized", 403)
 
   tar1090_https = config_data.get('map', {}).get('tar1090_https', False)
   preferred = 'https' if tar1090_https else 'http'

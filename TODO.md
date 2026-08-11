@@ -67,15 +67,15 @@ These are confirmed defects that silently produce wrong results today.
 - **File**: `event/event.py`
 - **Problem**: Detection and config data are fetched from each radar sequentially with `requests.get(..., timeout=1)`. For 3 radars: up to 6 sequential HTTP calls = up to 6 seconds of blocking before processing starts.
 - **Fix**: Replace with `aiohttp` + `asyncio.gather()` for concurrent fetches. All radar URLs fetched in a single `await` call.
-- [ ] Add `aiohttp` to `event/requirements.txt`
-- [ ] Rewrite radar fetch section to use `asyncio.gather`
+- [x] Add `aiohttp` to `event/requirements.txt`
+- [x] Rewrite radar fetch section to use `asyncio.gather`
 
 ### B3 — Cache radar configs; only poll detections each epoch
 - **File**: `event/event.py`
 - **Problem**: `/api/config` is fetched from each radar node every second. Radar TX/RX positions and carrier frequency never change at runtime.
 - **Fix**: Cache config on first successful fetch per radar. Provide a background refresh (e.g. every 60s) to handle radar restarts.
-- [ ] Implement config cache dict keyed by radar URL
-- [ ] Add background config refresh timer
+- [x] Implement config cache dict keyed by radar URL
+- [x] Add background config refresh timer
 
 ### B4 — Arc-length parametrisation for ellipse/ellipsoid sampling
 - **Files**: `EllipseParametric.py`, `EllipsoidParametric.py`
@@ -239,20 +239,20 @@ These are confirmed defects that silently produce wrong results today.
 - [ ] Confirm `Ellipsoid.py` yaw/pitch computation is correct for all baseline orientations (add assertion-based test)
 - [ ] Add a UI warning when all selected radars have identical TX **and** identical RX coordinates (Topology D detected)
 
-### D6 — Hard-coded association window
-- **File**: `AdsbAssociator.py`
-- **Problem**: `distance_window = 10` is hard-coded with no units documentation. This is in normalised delay-Doppler distance and is not configurable.
-- [ ] Move `distance_window` to `config.yml` under `associate.adsb`
-- [ ] Document units in config
+### D6 — Hard-coded association window (resolved — file deleted)
+- **File**: `AdsbAssociator.py` (deleted)
+- **Problem**: `distance_window = 10` was hard-coded. `AdsbAssociator` has been removed from the project; `distance_window` was configurable in its constructor before deletion.
+- [x] Move `distance_window` to `config.yml` under `associate.adsb`
+- [x] Document units in config
 
 ### D7 — Non-ADS-B association algorithm (see Phase F for full plan)
 - **File**: `event/algorithm/associator/`
-- **Problem**: The only associator requires external ADS-B truth via adsb2dd. Targets not broadcasting ADS-B (military aircraft, general aviation without transponder, drones) are completely invisible to the system.
+- **Problem**: Prior to the GeometricAssociator becoming the primary associator, association required external ADS-B truth via adsb2dd. Targets not broadcasting ADS-B (military aircraft, general aviation without transponder, drones) were completely invisible to the system.
 - **Key finding**: The ADS-B dependency is **entirely in the association layer**. Every localisation algorithm (`EllipseParametric`, `EllipsoidParametric`, `SphericalIntersection`) consumes `{id: [{radar, delay, doppler}]}` and is agnostic to how that dict was populated. A blind associator producing the same schema requires **zero changes** to any localisation code.
 - **Note**: Mentioned in README Future Work. See Phase F below for the full research-backed implementation plan.
 - [x] Implement Phase F1 `GeometricAssociator` (see Phase F)
 - [x] Add `associate.geometric` config block
-- [x] Wire into `event.py` and `api.py` alongside existing `adsb-associator`
+- [x] Wire into `event.py` and `api.py` — GeometricAssociator is now the sole associator
 
 ---
 
@@ -433,11 +433,9 @@ Both fields co-exist. `detections_localised` continues to hold ADS-B-associated 
 ---
 
 
-### Background — Why ADS-B Is Currently Required
+### Background — Why ADS-B Was Historically Required (Resolved ✅)
 
-`AdsbAssociator` uses an external adsb2dd service to compute the expected bistatic `(delay, Doppler)` for every ADS-B aircraft, then matches those predictions against each radar's detection list. This solves the **data association problem**: given M detections from radar 1 and M detections from radar 2, which pairs belong to the same physical target?
-
-The ADS-B-free solution answers this purely from radar geometry. It does **not** affect localisation accuracy — the CRLB floor is set by radar bandwidth and SNR, not by the association method. ADS-B only provides a shortcut to the association answer; the geometry provides the same answer without external truth.
+The original `AdsbAssociator` used an external adsb2dd service to compute the expected bistatic `(delay, Doppler)` for every ADS-B aircraft, then matched those predictions against each radar's detection list. As of this writing, **ADS-B association has been removed** and `GeometricAssociator` is the sole associator — it solves the data association problem purely from radar geometry. The CRLB floor is set by radar bandwidth and SNR, not by the association method.
 
 ### Key Architectural Invariant
 
@@ -556,16 +554,15 @@ associate:
 
 **`api/api.py` addition:**
 ```python
-associators = [
-    {"name": "ADSB Associator",      "id": "adsb-associator"},
-    {"name": "Geometric Associator", "id": "geometric-associator"},  # ADD
+localisations = [
+    ...existing localisation entries...
 ]
+# GeometricAssociator is the sole associator (no associators list needed).
 ```
 
-**`event/event.py` addition (one elif branch):**
+**`event/event.py` — GeometricAssociator is the sole associator (always invoked):**
 ```python
-elif item["associator"] == "geometric-associator":
-    associated_dets = geometricAssociator.process(radar_list, radar_data, timestamp)
+associated_dets = geometricAssociator.process(item["server"], radar_dict_item, timestamp)
 ```
 
 - [x] Create `event/algorithm/associator/GeometricAssociator.py`

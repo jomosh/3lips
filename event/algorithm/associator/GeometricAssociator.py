@@ -118,7 +118,6 @@ class GeometricAssociator:
             sample_arrays = []
             skip = False
             for r_idx in range(n_radars):
-                # cand[r_idx] is (d_idx, (delay, doppler)) — no .index() needed
                 d_idx = cand[r_idx][0]
                 pts = sample_cache.get((r_idx, d_idx))
                 if pts is None or len(pts) == 0:
@@ -128,8 +127,7 @@ class GeometricAssociator:
             if skip:
                 continue
 
-            # Pairwise distance check: for each pair of radars, verify at least
-            # one pair of sample points is within threshold.
+            # Pairwise distance check
             passes = True
             for i in range(n_radars):
                 for j in range(i + 1, n_radars):
@@ -145,7 +143,6 @@ class GeometricAssociator:
             if not passes:
                 continue
 
-            # Compute total minimum intersection distance (for scoring)
             total_min_dist = 0.0
             for i in range(n_radars):
                 for j in range(i + 1, n_radars):
@@ -158,12 +155,10 @@ class GeometricAssociator:
         if not survivors:
             return {}
 
-        # ---- 5. Doppler sign-consistency filter ---------------------------------
+        # ---- 5. Doppler sign-consistency filter --------------------------------
         filtered = []
         for cand, score in survivors:
-            # cand[r_idx] is (d_idx, (delay, doppler))
             dopplers = [c[1][1] for c in cand]
-            # All Doppler values must have the same sign (all positive or all negative)
             signs = [1 if d > 0 else (-1 if d < 0 else 0) for d in dopplers]
             non_zero = [s for s in signs if s != 0]
             if non_zero and len(set(non_zero)) == 1:
@@ -234,7 +229,7 @@ class GeometricAssociator:
         # Local ellipse: x = a cos(u), y = b sin(u) cos(v), z = b sin(u) sin(v)
         # Convert bistatic range from milliseconds to metres for consistent
         # addition with ellipsoid.distance (which is in metres).
-        bistatic_range_m = bistatic_range_ms * 299792458 / 1000
+        bistatic_range_m = bistatic_range_ms
         a = (bistatic_range_m + ellipsoid.distance) / 2
         b_sq = a * a - (ellipsoid.distance / 2) ** 2
         if b_sq <= 0:

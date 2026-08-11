@@ -14,15 +14,17 @@ applyTo: ["api/**/*.py", "event/event.py"]
 {
   "hash": "...",
   "server": ["radar1", "radar2"],
-  "associator": "adsb-associator",
   "localisation": "ellipse-parametric-mean",
-  "adsb": "adsb.server",
   "timestamp": 1234567890000,
   "timestamp_event": 1234567890000,
   "truth": { "hex": { "lat": ..., "lon": ..., "alt": ..., "flight": "..." } },
   "detections_associated": { "hex": [{ "radar": "...", "delay": ..., "doppler": ... }] },
   "detections_localised": { "hex": { "points": [[lat, lon, alt]] } },
-  "ellipsoids": { "radar": [[lat, lon, alt], ...] },
+  "detections_noncooperative": { "track_id": { "points": [[lat, lon, alt]] } },
+  "ellipsoids": {
+    "hex-radarName": [[lat, lon, alt], ...],
+    "nc_synthId-radarName": [[lat, lon, alt], ...]
+  },
   "time": 0.123
 }
 ```

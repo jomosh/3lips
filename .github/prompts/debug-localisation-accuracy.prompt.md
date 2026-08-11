@@ -22,7 +22,7 @@ Systematically debug a localisation accuracy or correctness problem in 3lips.
 ### Step 3 — Check association
 - Is `associated_dets_3_radars` empty when it shouldn't be? The code requires `len(value) >= 3` for 3-radar intersection.
 - Are radar detections actually non-None? Check `radar_dict[name]["detection"]`.
-- Is the `distance_window = 10` too tight for the observed delay-Doppler offsets?
+- Is the `geometric.threshold` in config.yml appropriate for the current geometry?
 
 ### Step 4 — Check ellipsoid geometry
 - Compute `a` and `b` for one radar manually: does the ellipse physically reach the expected target area?

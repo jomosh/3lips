@@ -27,7 +27,7 @@
 Each **blah2** radar node outputs a list of detections as `(delay, Doppler)` pairs — i.e. the total path-length excess and the relative velocity of each detected target. 3lips:
 
 1. **Fetches** detection and config data from each blah2 node every second.
-2. **Associates** detections across radars using ADS-B aircraft truth from a [tar1090](https://github.com/wiedehopf/tar1090) server via [adsb2dd](https://github.com/jomosh/adsb2dd).
+2. **Associates** detections across radars using geometric enumeration (no external ADS‑B association service required).
 3. **Localises** each target using one of several ellipsoid-intersection algorithms.
 4. **Serves** the results as JSON via a REST API and renders them on a MapLibre GL JS web map.
 
@@ -47,9 +47,6 @@ Each **blah2** radar node outputs a list of detections as `(delay, Doppler)` pai
 |---------|---------|-----------|
 | [blah2](https://github.com/jomosh/blah2) | Bistatic radar node(s) | `hostname:port` |
 | [tar1090](https://github.com/wiedehopf/tar1090) | ADS-B aircraft truth display | `hostname:port` |
-| [adsb2dd](https://github.com/jomosh/adsb2dd) | ADS-B → delay-Doppler converter | `hostname:port` |
-
-> **Note**: adsb2dd is a small service that queries your tar1090 ADS-B server and computes the expected bistatic delay and Doppler for each aircraft given a radar's TX/RX geometry. It must be running and accessible from the 3lips host.
 
 ---
 
@@ -104,8 +101,6 @@ associate:
     tDelete: 5                          # Seconds; remove an ADS-B track if not
                                         # updated within this window. Increase if
                                         # your ADS-B feed is intermittent.
-    adsb2dd: "adsb2dd.example.com:49155" # Hostname:port of the adsb2dd service
-    adsb2dd_https: false                # Set true if adsb2dd is behind TLS
 
 # ─── Localisation Tuning ─────────────────────────────────────────────────────
 localisation:
@@ -238,7 +233,6 @@ map:
 | `radar[].name` | string | — | Display label in UI |
 | `radar[].url` | string | — | blah2 API hostname[:port] |
 | `associate.adsb.tDelete` | int | seconds | ADS-B track expiry |
-| `associate.adsb.adsb2dd` | string | — | adsb2dd service address |
 | `localisation.ellipse.nSamples` | int | — | Ellipse sample density |
 | `localisation.ellipse.threshold` | int | metres | Intersection test distance |
 | `localisation.ellipse.nDisplay` | int | — | Ellipse map display points |
@@ -366,7 +360,7 @@ Trigger or poll a localisation request.
 
 **Example request:**
 ```
-GET /api?server=radar1.example.com&server=radar2.example.com&associator=adsb-associator&localisation=ellipse-parametric-mean&adsb=adsb.example.com
+GET /api?server=radar1.example.com&server=radar2.example.com&localisation=ellipse-parametric-mean
 ```
 
 **Response** (JSON):
@@ -374,9 +368,7 @@ GET /api?server=radar1.example.com&server=radar2.example.com&associator=adsb-ass
 {
   "hash": "abc1234567",
   "server": ["radar1.example.com", "radar2.example.com"],
-  "associator": "adsb-associator",
   "localisation": "ellipse-parametric-mean",
-  "adsb": "adsb.example.com",
   "timestamp": 1234567890000,
   "timestamp_event": 1234567890000,
   "truth": {
@@ -591,7 +583,7 @@ If a radar node is unreachable (timeout or error), 3lips continues with the rema
 | Altitude (EllipsoidParametric) | ~500–2000m | Highly geometry dependent |
 
 ### Known Limitations
-1. **ADS-B dependency (mitigated)**: By default, association requires ADS-B truth via adsb2dd. Targets not broadcasting ADS-B (military, general aviation without transponder) are invisible. Enable `noncooperative.enabled: true` in `config.yml` to activate the blind Geometric Associator + EKF + JIPDA pipeline. Non‑cooperative targets then appear on the map with a "Non‑coop" label and yellow marker. Blind association requires ≥ 3 radars (ghost probability ≈ 6×10⁻⁶ per candidate at N=3).
+1. **Association is geometry-based**: The Geometric Associator enumerates cross-radar detection candidates and tests for geometric consistency. All detections produce per‑radar ellipsoids. Multi‑radar association requires ≥ 3 radars with geometrically intersecting ellipsoids (ghost probability ≈ 6×10⁻⁶ per candidate at N=3).
 2. **Minimum 3 radars** for parametric methods. With only 2 radars, two ellipses intersect along a curve, not a point.
 3. **SphericalIntersection requires a shared node**: All radars must share the same transmitter (Topology A) or the same receiver (Topology B — currently a bug, TODO C6). Mixing independent TX/RX pairs (Topology C) gives wrong positions silently. See the [Deployment Topologies](#deployment-topologies) section for full details.
 4. **No temporal smoothing**: Each epoch produces an independent position fix. Track jitter is expected; a Kalman filter is planned (see `TODO.md`).
@@ -603,10 +595,9 @@ If a radar node is unreachable (timeout or error), 3lips continues with the rema
 
 ### No targets appearing on map
 1. Check the event container logs: `docker compose logs -f event`
-2. Verify radar nodes are accessible: `curl http://<radar-url>/api/config`
-3. Verify adsb2dd is running: `curl http://<adsb2dd-url>/api/dd?...`
-4. Check that ADS-B aircraft are visible in tar1090 within the radar coverage area
-5. Confirm `associate.adsb.adsb2dd` in config.yml matches your adsb2dd address
+2. Verify radar nodes are accessible: `curl http://<radar-url>/api/config` and `curl http://<radar-url>/api/detection`
+3. Check that ADS-B aircraft are visible in tar1090 within the radar coverage area
+4. Set **Min radars for ellipsoids** to **1** in the map settings (gear icon) to see single‑radar ellipsoids
 
 ### Targets appear at wrong location (e.g. near 0°E when they should be in UK)
 - This is bug **A2** in `TODO.md`: longitude wrapping in `ecef2lla`. See TODO for fix.
