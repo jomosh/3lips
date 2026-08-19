@@ -1,4 +1,4 @@
-# 3lips bootleg
+# 3lips contrail
 
 Target localisation for multi-static radar using ellipse intersections. Not a dating app.
 
